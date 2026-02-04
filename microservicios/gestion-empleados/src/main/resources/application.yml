@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: gestion-empleados
+  data:
+    mongodb:
+      host: localhost
+      port: 27017
+      database: empleados-db
+      auto-index-creation: true
+    redis:
+      host: localhost
+      port: 6379
+server:
+  port: 8080
+
+logging:
+  level:
+    com.microservicios.empleados: INFO
+    org.springframework.data.mongodb: INFO
