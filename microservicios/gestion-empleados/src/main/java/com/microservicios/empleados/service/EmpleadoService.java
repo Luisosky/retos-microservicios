@@ -23,10 +23,13 @@ public class EmpleadoService {
 
     @Transactional
     public Empleado crearEmpleado(Empleado empleado) {
+        if (empleado.getNumeroEmpleado() == null || empleado.getNumeroEmpleado().trim().isEmpty()) {
+            throw new IllegalArgumentException("El número de empleado es requerido");
+        }
         if (empleadoRepository.existsByEmail(empleado.getEmail())) {
             throw new EmpleadoYaExisteException("El email " + empleado.getEmail() + " ya está registrado");
         }
-        if (empleadoRepository.existsByNumeroEmpleado(empleado.getNumeroEmpleado())) {
+        if (empleadoRepository.existsById(empleado.getNumeroEmpleado())) {
             throw new EmpleadoYaExisteException("El número de empleado " + empleado.getNumeroEmpleado() + " ya está registrado");
         }
 

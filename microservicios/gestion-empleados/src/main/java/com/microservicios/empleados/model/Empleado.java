@@ -18,9 +18,6 @@ import java.time.LocalDate;
 @Document(collection = "empleados")
 public class Empleado {
     @Id
-    private String id;
-
-    @Indexed(unique = true)
     private String numeroEmpleado;
 
     @Indexed(unique = true)
