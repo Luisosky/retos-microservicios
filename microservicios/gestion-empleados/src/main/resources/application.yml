@@ -3,9 +3,8 @@ spring:
     name: gestion-empleados
   data:
     mongodb:
-      host: localhost
-      port: 27017
-      database: empleados-db
+      uri: mongodb+srv://cabrones3micro:0ZlUORWczZsg5vfB@microservicios.btxefyd.mongodb.net/empleados-db?retryWrites=true&w=majority
+      #database: empleados-db
       auto-index-creation: true
     redis:
       host: localhost
