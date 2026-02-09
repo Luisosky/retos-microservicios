@@ -1,10 +1,11 @@
 spring:
   application:
     name: gestion-empleados
+  config:
+    import: optional:classpath:application-secret.yml
   data:
     mongodb:
-      uri: mongodb+srv://cabrones3micro:0ZlUORWczZsg5vfB@microservicios.btxefyd.mongodb.net/empleados-db?retryWrites=true&w=majority
-      #database: empleados-db
+      database: empleados-db
       auto-index-creation: true
     redis:
       host: localhost

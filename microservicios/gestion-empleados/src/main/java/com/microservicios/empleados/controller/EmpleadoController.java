@@ -17,7 +17,7 @@ public class EmpleadoController {
     @PostMapping
     public ResponseEntity<Empleado> registrarEmpleado(@Valid @RequestBody Empleado empleado) {
         Empleado empleadoCreado = empleadoService.crearEmpleado(empleado);
-        return ResponseEntity.status(HttpStatus.OK).body(empleadoCreado);
+        return ResponseEntity.status(HttpStatus.CREATED).body(empleadoCreado);
     }
 
     @GetMapping("/{id}")
