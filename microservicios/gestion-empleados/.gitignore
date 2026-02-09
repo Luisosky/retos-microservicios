@@ -3,4 +3,4 @@ target/
 .idea/
 .DS_Store
 *.log
-application-secret.yml
+*.application-secret.yml
