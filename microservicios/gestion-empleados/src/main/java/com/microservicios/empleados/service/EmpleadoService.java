@@ -6,12 +6,14 @@ import com.microservicios.empleados.exception.EmpleadoNoEncontradoException;
 import com.microservicios.empleados.model.Empleado;
 import com.microservicios.empleados.model.EventoEmpleado;
 import com.microservicios.empleados.repository.EmpleadoRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
 
 @Service
@@ -19,6 +21,7 @@ import java.util.Map;
 public class EmpleadoService {
     private final EmpleadoRepository empleadoRepository;
     private final RedisTemplate<String, Object> redisTemplate;
+    private final ObjectMapper objectMapper;
     private static final String STREAM_KEY = "eventos:empleados";
 
     @Transactional
@@ -48,11 +51,23 @@ public class EmpleadoService {
     }
 
     private void publicarEventoEmpleadoCreado(Empleado empleado) {
-        EventoEmpleado evento = EventoEmpleado.builder()
-                .tipo("EMPLEADO_CREADO")
-                .datos(empleado)
-                .timestamp(LocalDateTime.now())
-                .build();
-        redisTemplate.opsForStream().add(STREAM_KEY, (Map<? extends Object, ? extends Object>) evento);
+        try {
+            EventoEmpleado evento = EventoEmpleado.builder()
+                    .tipo("EMPLEADO_CREADO")
+                    .datos(empleado)
+                    .timestamp(LocalDateTime.now())
+                    .build();
+
+            Map<String, String> eventoMap = new HashMap<>();
+            eventoMap.put("tipo", evento.getTipo());
+            eventoMap.put("numeroEmpleado", empleado.getNumeroEmpleado());
+            eventoMap.put("timestamp", evento.getTimestamp().toString());
+            eventoMap.put("datos", objectMapper.writeValueAsString(evento.getDatos()));
+
+            redisTemplate.opsForStream().add(STREAM_KEY, eventoMap);
+        } catch (Exception e) {
+            // Log the error but don't fail the employee creation
+            System.err.println("Error al publicar evento a Redis: " + e.getMessage());
+        }
     }
 }
