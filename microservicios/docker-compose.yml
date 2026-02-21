@@ -1,65 +1,85 @@
-version: '3.8'
-
 services:
-  # --- SERVICIO DE DEPARTAMENTOS ---
-  database-departamentos:
-    image: postgres:15
-    container_name: db-deptos
-    environment:
-      POSTGRES_DB: db_departamentos
-      POSTGRES_USER: user_admin
-      POSTGRES_PASSWORD: password123
-    volumes:
-      - [cite_start]vol-departamentos:/var/lib/postgresql/data [cite: 116]
-    networks:
-      - red-interna
-
-  departamentos-service:
-    build: ./departamentos-service
-    container_name: service-deptos
-    ports:
-      - [cite_start]"8081:8081" [cite: 199]
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://database-departamentos:5432/db_departamentos
-      SPRING_DATASOURCE_USERNAME: user_admin
-      SPRING_DATASOURCE_PASSWORD: password123
-    depends_on:
-      - [cite_start]database-departamentos [cite: 93]
-    networks:
-      - red-interna
-
-  # --- SERVICIO DE EMPLEADOS (Evolucionado) ---
+  # =========================
+  # Bases de datos
+  # =========================
   database-empleados:
-    image: postgres:15
-    container_name: db-empleados
+    image: postgres:16
+    container_name: database-empleados
     environment:
-      POSTGRES_DB: db_empleados
-      POSTGRES_USER: user_admin
-      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: ${EMP_DB_NAME:-empleados_db}
+      POSTGRES_USER: ${EMP_DB_USER:-empleados_user}
+      POSTGRES_PASSWORD: ${EMP_DB_PASSWORD:-empleados_password}
     volumes:
-      - [cite_start]vol-empleados:/var/lib/postgresql/data [cite: 149]
+      - empleados_db_data:/var/lib/postgresql/data
     networks:
-      - red-interna
+      - microservices-net
+    # No exponemos el puerto al host (solo acceso interno)
+    # ports:
+    #   - "5432:5432"
 
-  empleados-service:
-    build: ./empleados-service
-    container_name: service-empleados
-    ports:
-      - [cite_start]"8080:8080" [cite: 193]
+  database-departamentos:
+    image: postgres:16
+    container_name: database-departamentos
     environment:
-                  SPRING_DATASOURCE_URL: jdbc:postgresql://database-empleados:5432/db_empleados
-                  SPRING_DATASOURCE_USERNAME: user_admin
-                  SPRING_DATASOURCE_PASSWORD: password123
-      [cite_start]URL_DEPARTAMENTOS: http://departamentos-service:8081/departamentos [cite: 152]
+      POSTGRES_DB: ${DEP_DB_NAME:-departamentos_db}
+      POSTGRES_USER: ${DEP_DB_USER:-departamentos_user}
+      POSTGRES_PASSWORD: ${DEP_DB_PASSWORD:-departamentos_password}
+    volumes:
+      - departamentos_db_data:/var/lib/postgresql/data
+    networks:
+      - microservices-net
+    # No exponemos el puerto al host (solo acceso interno)
+    # ports:
+    #   - "5433:5432"
+
+  # =========================
+  # Microservicios
+  # =========================
+  empleados-service:
+    build:
+      context: ./gestion-empleado
+    container_name: empleados-service
+    environment:
+      DB_HOST: database-empleados
+      DB_PORT: 5432
+      DB_NAME: ${EMP_DB_NAME:-empleados_db}
+      DB_USER: ${EMP_DB_USER:-empleados_user}
+      DB_PASSWORD: ${EMP_DB_PASSWORD:-empleados_password}
     depends_on:
       - database-empleados
     networks:
-      - red-interna
+      - microservices-net
+    ports:
+      - "8080:8000" # expone solo la API al host
 
+  departamentos-service:
+    build:
+      context: ./gestion-departamentos
+    container_name: departamentos-service
+    environment:
+      DB_HOST: database-departamentos
+      DB_PORT: 5432
+      DB_NAME: ${DEP_DB_NAME:-departamentos_db}
+      DB_USER: ${DEP_DB_USER:-departamentos_user}
+      DB_PASSWORD: ${DEP_DB_PASSWORD:-departamentos_password}
+    depends_on:
+      - database-departamentos
+    networks:
+      - microservices-net
+    ports:
+      - "8081:8000" # expone solo la API al host
+
+# =========================
+# Red interna
+# =========================
 networks:
-  red-interna:
-    [cite_start]driver: bridge [cite: 93]
+  microservices-net:
+    driver: bridge
+    internal: true
 
+# =========================
+# Volúmenes de persistencia
+# =========================
 volumes:
-  [cite_start]vol-empleados: [cite: 206]
-  [cite_start]vol-departamentos: [cite: 206]
+  empleados_db_data:
+  departamentos_db_data:
