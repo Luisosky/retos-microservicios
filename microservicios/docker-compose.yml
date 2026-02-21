@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # --- SERVICIO DE DEPARTAMENTOS ---
+  database-departamentos:
+    image: postgres:15
+    container_name: db-deptos
+    environment:
+      POSTGRES_DB: db_departamentos
+      POSTGRES_USER: user_admin
+      POSTGRES_PASSWORD: password123
+    volumes:
+      - [cite_start]vol-departamentos:/var/lib/postgresql/data [cite: 116]
+    networks:
+      - red-interna
+
+  departamentos-service:
+    build: ./departamentos-service
+    container_name: service-deptos
+    ports:
+      - [cite_start]"8081:8081" [cite: 199]
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://database-departamentos:5432/db_departamentos
+      SPRING_DATASOURCE_USERNAME: user_admin
+      SPRING_DATASOURCE_PASSWORD: password123
+    depends_on:
+      - [cite_start]database-departamentos [cite: 93]
+    networks:
+      - red-interna
+
+  # --- SERVICIO DE EMPLEADOS (Evolucionado) ---
+  database-empleados:
+    image: postgres:15
+    container_name: db-empleados
+    environment:
+      POSTGRES_DB: db_empleados
+      POSTGRES_USER: user_admin
+      POSTGRES_PASSWORD: password123
+    volumes:
+      - [cite_start]vol-empleados:/var/lib/postgresql/data [cite: 149]
+    networks:
+      - red-interna
+
+  empleados-service:
+    build: ./empleados-service
+    container_name: service-empleados
+    ports:
+      - [cite_start]"8080:8080" [cite: 193]
+    environment:
+                  SPRING_DATASOURCE_URL: jdbc:postgresql://database-empleados:5432/db_empleados
+                  SPRING_DATASOURCE_USERNAME: user_admin
+                  SPRING_DATASOURCE_PASSWORD: password123
+      [cite_start]URL_DEPARTAMENTOS: http://departamentos-service:8081/departamentos [cite: 152]
+    depends_on:
+      - database-empleados
+    networks:
+      - red-interna
+
+networks:
+  red-interna:
+    [cite_start]driver: bridge [cite: 93]
+
+volumes:
+  [cite_start]vol-empleados: [cite: 206]
+  [cite_start]vol-departamentos: [cite: 206]

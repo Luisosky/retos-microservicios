@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -69,5 +70,9 @@ public class EmpleadoService {
             // Log the error but don't fail the employee creation
             System.err.println("Error al publicar evento a Redis: " + e.getMessage());
         }
+    }
+
+    public List<Empleado> obtenerTodosEmpleados() {
+        return empleadoRepository.findAll();
     }
 }

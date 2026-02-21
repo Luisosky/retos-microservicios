@@ -8,6 +8,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/empleado")
 @RequiredArgsConstructor
@@ -18,6 +20,12 @@ public class EmpleadoController {
     public ResponseEntity<Empleado> registrarEmpleado(@Valid @RequestBody Empleado empleado) {
         Empleado empleadoCreado = empleadoService.crearEmpleado(empleado);
         return ResponseEntity.status(HttpStatus.CREATED).body(empleadoCreado);
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Empleado>> listarEmpleados() {
+        List<Empleado> empleados = empleadoService.obtenerTodosEmpleados();
+        return ResponseEntity.status(HttpStatus.OK).body(empleados);
     }
 
     @GetMapping("/{id}")
