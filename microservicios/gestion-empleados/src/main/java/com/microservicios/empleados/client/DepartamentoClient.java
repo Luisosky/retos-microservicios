@@ -31,7 +31,14 @@ public class DepartamentoClient {
      */
     public boolean existeDepartamento(String departamentoId) {
         try {
-            String url = departamentosServiceUrl + "/departamentos/" + departamentoId;
+            // Limpiar y validar el departamentoId
+            if (departamentoId == null || departamentoId.trim().isEmpty()) {
+                log.warn("ID de departamento vacío o nulo");
+                return false;
+            }
+            
+            String idLimpio = departamentoId.trim();
+            String url = departamentosServiceUrl + "/departamentos/" + idLimpio;
             log.info("Consultando departamento en: {}", url);
             
             ResponseEntity<DepartamentoDto> response = restTemplate.getForEntity(
@@ -64,7 +71,14 @@ public class DepartamentoClient {
      */
     public DepartamentoDto obtenerDepartamento(String departamentoId) {
         try {
-            String url = departamentosServiceUrl + "/departamentos/" + departamentoId;
+            // Limpiar y validar el departamentoId
+            if (departamentoId == null || departamentoId.trim().isEmpty()) {
+                log.warn("ID de departamento vacío o nulo");
+                return null;
+            }
+            
+            String idLimpio = departamentoId.trim();
+            String url = departamentosServiceUrl + "/departamentos/" + idLimpio;
             ResponseEntity<DepartamentoDto> response = restTemplate.getForEntity(
                     url,
                     DepartamentoDto.class
