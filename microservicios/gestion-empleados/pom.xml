@@ -67,6 +67,13 @@
             <version>3.0.0</version>
         </dependency>
 
+        <!-- Conscrypt: replaces JSSE TLS stack with BoringSSL, fixes WSL2 TLS issues -->
+        <dependency>
+            <groupId>org.conscrypt</groupId>
+            <artifactId>conscrypt-openjdk-uber</artifactId>
+            <version>2.5.2</version>
+        </dependency>
+
     </dependencies>
 
     <build>
