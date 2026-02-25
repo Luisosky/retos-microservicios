@@ -10,6 +10,13 @@ spring:
     mongodb:
       uri: ${MONGODB_URI:mongodb://localhost:27017/empleados-db}
       auto-index-creation: true
+      # Configuración de conexión pool para mejor rendimiento
+      connection-string: ${MONGODB_URI:mongodb://localhost:27017/empleados-db}
+      # Timeouts y configuración de reconexión
+      connect-timeout-ms: 30000
+      socket-timeout-ms: 30000
+      max-pool-size: 20
+      min-pool-size: 5
     redis:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
@@ -35,5 +42,4 @@ springdoc:
   api-docs:
     path: /v3/api-docs
   show-actuator: false
-
 

@@ -1,41 +1,22 @@
 services:
   # =========================
-  # Bases de datos
+  # Servicios de Infraestructura
   # =========================
-  mongodb-empleados:
-    image: mongo:7
-    container_name: mongodb-empleados
-    environment:
-      MONGO_INITDB_DATABASE: empleados-db
-    volumes:
-      - mongodb_empleados_data:/data/db
-    networks:
-      - microservices-net
-    ports:
-      - "27017:27017"
-
   redis:
     image: redis:7-alpine
-    container_name: redis
+    container_name: redis-cache
+    command: redis-server
+    volumes:
+      - redis_data:/data
     networks:
       - microservices-net
     ports:
       - "6379:6379"
-
-  database-departamentos:
-    image: postgres:16
-    container_name: database-departamentos
-    environment:
-      POSTGRES_DB: ${DEP_DB_NAME:-departamentos_db}
-      POSTGRES_USER: ${DEP_DB_USER:-departamentos_user}
-      POSTGRES_PASSWORD: ${DEP_DB_PASSWORD:-departamentos_password}
-    volumes:
-      - departamentos_db_data:/var/lib/postgresql/data
-    networks:
-      - microservices-net
-    # No exponemos el puerto al host (solo acceso interno)
-    # ports:
-    #   - "5433:5432"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # =========================
   # Microservicios
@@ -45,32 +26,42 @@ services:
       context: ./gestion-empleados
     container_name: empleados-service
     environment:
+      # MongoDB Atlas Configuration (Cloud)
       MONGODB_URI: ${MONGODB_URI}
-      SPRING_DATA_REDIS_HOST: ${REDIS_HOST:-redis}
-      SPRING_DATA_REDIS_PORT: ${REDIS_PORT:-6379}
+      SPRING_DATA_MONGODB_URI: ${MONGODB_URI}
+      SPRING_DATA_MONGODB_DATABASE: ${MONGODB_DATABASE}
+      # Redis Configuration (Local)
+      SPRING_DATA_REDIS_HOST: ${REDIS_HOST}
+      SPRING_DATA_REDIS_PORT: ${REDIS_PORT}
+      # Application Configuration
+      SERVER_PORT: 8080
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     networks:
       - microservices-net
     ports:
       - "8080:8080"
+    restart: unless-stopped
 
   departamentos-service:
     build:
       context: ./gestion-departamentos
     container_name: departamentos-service
     environment:
-      DB_HOST: database-departamentos
-      DB_PORT: 5432
-      DB_NAME: ${DEP_DB_NAME:-departamentos_db}
-      DB_USER: ${DEP_DB_USER:-departamentos_user}
-      DB_PASSWORD: ${DEP_DB_PASSWORD:-departamentos_password}
-    depends_on:
-      - database-departamentos
+      # Supabase PostgreSQL Configuration (Cloud)
+      DB_HOST: ${DEP_DB_HOST}
+      DB_PORT: ${DEP_DB_PORT}
+      DB_NAME: ${DEP_DB_NAME}
+      DB_USER: ${DEP_DB_USER}
+      DB_PASSWORD: ${DEP_DB_PASSWORD}
+      # Application Configuration
+      APP_PORT: 8081
     networks:
       - microservices-net
     ports:
-      - "8081:8000" # expone solo la API al host
+      - "8081:8081"
+    restart: unless-stopped
 
 # =========================
 # Red interna
@@ -83,5 +74,5 @@ networks:
 # Volúmenes de persistencia
 # =========================
 volumes:
-  mongodb_empleados_data:
-  departamentos_db_data:
+  redis_data:
+    driver: local

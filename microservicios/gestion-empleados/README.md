@@ -1,46 +1,36 @@
 # Microservicio Gestión de Empleados
 
-## Características
-- Registro y consulta de empleados
-- Integración con MongoDB para persistencia
-- Publicación de eventos a Redis Streams
-- Contenerización con Docker
+### Pasos para Ejecutar
 
-## Endpoints
-
-### Registrar Empleado
-**POST** http://localhost:8080/empleado
-
-```json
-{
-  "numeroEmpleado": "EMP001",
-  "nombre": "Juan",
-  "apellido": "Pérez",
-  "email": "juan.perez@empresa.com",
-  "cargo": "Desarrollador",
-  "area": "TI",
-  "fechaIngreso": "2024-01-15",
-  "estado": "ACTIVO"
-}
+1. **Clonar/Descargar el proyecto**:
+```bash
+cd gestion-empleados
 ```
 
-**Respuesta (200 OK):** Empleado registrado
+2. **Compilar el proyecto**:
+```bash
+mvn clean compile
+```
 
-### Consultar Empleado por ID
-**GET** http://localhost:8080/empleado/{id}
+3. **Ejecutar la aplicación**:
+```bash
+mvn spring-boot:run
+```
 
-**Respuesta (200 OK):** Información del empleado
+4. **Acceder a la API**:
+- URL base: http://localhost:8080
+- Swagger UI: http://localhost:8080/swagger-ui.html
+- API Docs: http://localhost:8080/v3/api-docs
 
-**Respuesta (404 Not Found):** El empleado con id {id} no existe
+## 📖 Documentación
 
-## Requisitos Previos
-- Java 17
-- Maven 3.9+
-- MongoDB (puerto 27017)
-- Redis (puerto 6379)
-- Docker
+Para información detallada sobre la configuración, consulta los siguientes archivos:
 
-## Ejecución
+- 📄 **[MONGODB_ATLAS_CONFIG.md](MONGODB_ATLAS_CONFIG.md)** - Configuración de MongoDB Atlas
+- 📄 **[SETUP_ENVIRONMENT_VARIABLES.md](SETUP_ENVIRONMENT_VARIABLES.md)** - Configurar variables de entorno
+## Características
+- Registro y consulta de empleados
+## Endpoints
 
 Este microservicio usa **MongoDB Atlas** (cloud) para la base de datos. Las credenciales están en el archivo `.env` del directorio `microservicios/`.
 
@@ -129,7 +119,7 @@ docker-compose up redis -d
 
 **Sin Docker (ejecución local)**:
 - **IntelliJ IDEA**: Instala el plugin "EnvFile" y configúralo
-- **VS Code**: Usa el plugin "DotENV" 
+- **VS Code**: Usa el plugin "DotENV"
 - **Eclipse**: Configura las variables en Run Configurations
 - **PowerShell**: `$env:MONGODB_URI="tu-uri-aqui"`
 
