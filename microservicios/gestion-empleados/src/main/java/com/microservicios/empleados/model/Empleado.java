@@ -25,7 +25,7 @@ import java.time.LocalDate;
         description = "Modelo que representa un empleado del sistema",
         example = "{\"numeroEmpleado\": \"EMP001\", \"nombre\": \"Juan\", \"apellido\": \"Pérez\", " +
                 "\"email\": \"juan.perez@empresa.com\", \"cargo\": \"Desarrollador\", \"area\": \"TI\", " +
-                "\"fechaIngreso\": \"2024-01-15\", \"estado\": \"ACTIVO\"}"
+                "\"departamentoId\": \"DEP001\", \"fechaIngreso\": \"2024-01-15\", \"estado\": \"ACTIVO\"}"
 )
 public class Empleado {
     @Id
@@ -78,6 +78,14 @@ public class Empleado {
             requiredMode = Schema.RequiredMode.REQUIRED
     )
     private String area;
+
+    @NotBlank(message = "El ID del departamento es requerido")
+    @Schema(
+            description = "Identificador del departamento al que pertenece el empleado",
+            example = "DEP001",
+            requiredMode = Schema.RequiredMode.REQUIRED
+    )
+    private String departamentoId;
 
     @NotNull(message = "La fecha de ingreso es requerida")
     @Schema(

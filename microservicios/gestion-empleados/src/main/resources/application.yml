@@ -23,6 +23,11 @@ spring:
 server:
   port: 8080
 
+# Configuración de microservicios externos
+services:
+  departamentos:
+    url: ${DEPARTAMENTOS_SERVICE_URL:http://departamentos:8081}
+
 logging:
   level:
     com.microservicios.empleados: INFO

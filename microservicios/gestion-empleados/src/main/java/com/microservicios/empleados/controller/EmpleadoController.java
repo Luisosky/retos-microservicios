@@ -28,8 +28,9 @@ public class EmpleadoController {
     @Operation(
             summary = "Registrar nuevo empleado",
             description = "Crea un nuevo empleado en la base de datos. Los campos requeridos son: " +
-                    "numeroEmpleado, nombre, apellido, email, cargo, área, fechaIngreso y estado. " +
-                    "El email debe ser único en el sistema."
+                    "numeroEmpleado, nombre, apellido, email, cargo, área, departamentoId, fechaIngreso y estado. " +
+                    "El email debe ser único en el sistema. " +
+                    "El departamentoId será validado consultando al servicio de departamentos."
     )
     @ApiResponses(value = {
             @ApiResponse(
@@ -44,8 +45,10 @@ public class EmpleadoController {
                     responseCode = "400",
                     description = "Solicitud inválida. Validaciones fallidas:\n" +
                             "- Email duplicado\n" +
+                            "- Número de empleado duplicado\n" +
                             "- Campos requeridos faltantes\n" +
-                            "- Formato de email inválido"
+                            "- Formato de email inválido\n" +
+                            "- Departamento no existe o no está activo"
             ),
             @ApiResponse(
                     responseCode = "500",
