@@ -28,7 +28,6 @@ services:
     environment:
       # MongoDB Atlas Configuration (Cloud)
       MONGODB_URI: ${MONGODB_URI}
-      SPRING_DATA_MONGODB_URI: ${MONGODB_URI}
       SPRING_DATA_MONGODB_DATABASE: ${MONGODB_DATABASE}
       # Redis Configuration (Local)
       SPRING_DATA_REDIS_HOST: ${REDIS_HOST}
@@ -40,6 +39,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      departamentos:
+        condition: service_started
     networks:
       - microservices-net
     ports:
@@ -48,17 +49,11 @@ services:
 
   departamentos:
     build:
-      context: ./gestion-departamentos
+      context: ./gestion-Departamentos
     container_name: departamentos
     environment:
-      # Supabase PostgreSQL Configuration (Cloud)
-      DB_HOST: ${DEP_DB_HOST}
-      DB_PORT: ${DEP_DB_PORT}
-      DB_NAME: ${DEP_DB_NAME}
-      DB_USER: ${DEP_DB_USER}
-      DB_PASSWORD: ${DEP_DB_PASSWORD}
-      # Application Configuration
-      APP_PORT: 8081
+      # Supabase PostgreSQL Connection (Cloud)
+      DEP_DATABASE_URL: ${DEP_DATABASE_URL}
     networks:
       - microservices-net
     ports:
