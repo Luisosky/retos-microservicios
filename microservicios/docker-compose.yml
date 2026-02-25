@@ -2,20 +2,25 @@ services:
   # =========================
   # Bases de datos
   # =========================
-  database-empleados:
-    image: postgres:16
-    container_name: database-empleados
+  mongodb-empleados:
+    image: mongo:7
+    container_name: mongodb-empleados
     environment:
-      POSTGRES_DB: ${EMP_DB_NAME:-empleados_db}
-      POSTGRES_USER: ${EMP_DB_USER:-empleados_user}
-      POSTGRES_PASSWORD: ${EMP_DB_PASSWORD:-empleados_password}
+      MONGO_INITDB_DATABASE: empleados-db
     volumes:
-      - empleados_db_data:/var/lib/postgresql/data
+      - mongodb_empleados_data:/data/db
     networks:
       - microservices-net
-    # No exponemos el puerto al host (solo acceso interno)
-    # ports:
-    #   - "5432:5432"
+    ports:
+      - "27017:27017"
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    networks:
+      - microservices-net
+    ports:
+      - "6379:6379"
 
   database-departamentos:
     image: postgres:16
@@ -37,20 +42,18 @@ services:
   # =========================
   empleados-service:
     build:
-      context: ./gestion-empleado
+      context: ./gestion-empleados
     container_name: empleados-service
     environment:
-      DB_HOST: database-empleados
-      DB_PORT: 5432
-      DB_NAME: ${EMP_DB_NAME:-empleados_db}
-      DB_USER: ${EMP_DB_USER:-empleados_user}
-      DB_PASSWORD: ${EMP_DB_PASSWORD:-empleados_password}
+      MONGODB_URI: ${MONGODB_URI}
+      SPRING_DATA_REDIS_HOST: ${REDIS_HOST:-redis}
+      SPRING_DATA_REDIS_PORT: ${REDIS_PORT:-6379}
     depends_on:
-      - database-empleados
+      - redis
     networks:
       - microservices-net
     ports:
-      - "8080:8000" # expone solo la API al host
+      - "8080:8080"
 
   departamentos-service:
     build:
@@ -75,11 +78,10 @@ services:
 networks:
   microservices-net:
     driver: bridge
-    internal: true
 
 # =========================
 # Volúmenes de persistencia
 # =========================
 volumes:
-  empleados_db_data:
+  mongodb_empleados_data:
   departamentos_db_data:

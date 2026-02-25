@@ -1,3 +1,11 @@
+from dotenv import load_dotenv
+from pathlib import Path
+import os
+
+# Cargar .env desde la raíz del proyecto
+env_path = Path(__file__).parent.parent.parent / ".env"
+load_dotenv(env_path)
+
 from fastapi import FastAPI
 from app.api.departamentos import router as departamentos_router
 

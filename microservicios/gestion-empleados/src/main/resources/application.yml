@@ -3,13 +3,16 @@ spring:
     name: gestion-empleados
   config:
     import: optional:classpath:application-secret.yml
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
   data:
     mongodb:
-      database: empleados-db
+      uri: ${MONGODB_URI:mongodb://localhost:27017/empleados-db}
       auto-index-creation: true
     redis:
-      host: localhost
-      port: 6379
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
 server:
   port: 8080
 
@@ -17,3 +20,20 @@ logging:
   level:
     com.microservicios.empleados: INFO
     org.springframework.data.mongodb: INFO
+
+# Configuración de Springdoc OpenAPI (Swagger)
+springdoc:
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    show-logo: true
+    syntaxHighlight:
+      activate: true
+    theme: light
+  api-docs:
+    path: /v3/api-docs
+  show-actuator: false
+
+
