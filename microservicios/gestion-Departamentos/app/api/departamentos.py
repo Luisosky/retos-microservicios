@@ -9,8 +9,15 @@ router = APIRouter(prefix="/departamentos", tags=["departamentos"])
 
 @router.post("", response_model=DepartamentoOut, status_code=status.HTTP_201_CREATED)
 def post_departamento(payload: DepartamentoCreate, db: Session = Depends(get_db)):
-    # Si quieres evitar duplicados, aquí puedes validar existencia previa.
-    return create_departamento(db, payload)
+    if get_departamento(db, payload.id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ya existe un departamento con id '{payload.id}'"
+        )
+    try:
+        return create_departamento(db, payload)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.get("/{dep_id}", response_model=DepartamentoOut)
 def get_departamento_by_id(dep_id: str, db: Session = Depends(get_db)):

@@ -1,11 +1,16 @@
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from app.models.departamento import Departamento
 from app.schemas.departamento import DepartamentoCreate
 
 def create_departamento(db: Session, data: DepartamentoCreate) -> Departamento:
     dep = Departamento(id=data.id, nombre=data.nombre, descripcion=data.descripcion)
     db.add(dep)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise ValueError(f"Ya existe un departamento con id '{data.id}'")
     db.refresh(dep)
     return dep
 
