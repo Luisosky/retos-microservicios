@@ -40,11 +40,17 @@ services:
       redis:
         condition: service_healthy
       departamentos:
-        condition: service_started
+        condition: service_healthy
     networks:
       - microservices-net
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
 
   departamentos:
@@ -58,6 +64,12 @@ services:
       - microservices-net
     ports:
       - "8081:8081"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
 
 # =========================
