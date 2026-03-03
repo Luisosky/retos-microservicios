@@ -26,7 +26,7 @@ server:
 # Configuración de microservicios externos
 services:
   departamentos:
-    url: ${DEPARTAMENTOS_SERVICE_URL:http://departamentos:8081}
+    url: ${DEPARTAMENTOS_SERVICE_URL:http://localhost:8081}
 
 logging:
   level:

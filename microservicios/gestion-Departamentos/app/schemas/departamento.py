@@ -22,4 +22,4 @@ class DepartamentoCreate(DepartamentoBase):
         return v
 
 class DepartamentoOut(DepartamentoCreate):
-    pass
+    activo: bool = True
