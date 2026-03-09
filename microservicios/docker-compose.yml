@@ -18,26 +18,48 @@ services:
       timeout: 5s
       retries: 5
 
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq-broker
+    ports:
+      - "5672:5672"   # Puerto de mensajería (AMQP)
+      - "15672:15672" # Interfaz web de administración (guest/guest)
+    networks:
+      - microservices-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # =========================
   # Microservicios
   # =========================
+
+  # Servicio en Java (Spring Boot) - Publicador de eventos
   empleados-service:
     build:
       context: ./gestion-empleados
     container_name: empleados-service
     environment:
-      # MongoDB Atlas Configuration (Cloud)
+      # MongoDB Atlas Configuration
       MONGODB_URI: ${MONGODB_URI}
       SPRING_DATA_MONGODB_DATABASE: ${MONGODB_DATABASE}
-      # Redis Configuration (Local)
+      # Redis Configuration
       SPRING_DATA_REDIS_HOST: ${REDIS_HOST}
       SPRING_DATA_REDIS_PORT: ${REDIS_PORT}
+      # RabbitMQ Configuration
+      SPRING_RABBITMQ_HOST: rabbitmq-broker
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: guest
+      SPRING_RABBITMQ_PASSWORD: guest
       # Microservices Communication
       DEPARTAMENTOS_SERVICE_URL: http://departamentos:8081
-      # Application Configuration
       SERVER_PORT: 8080
     depends_on:
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       departamentos:
         condition: service_healthy
@@ -46,20 +68,23 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/docs"]
-      interval: 10s
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v3/api-docs"]
+      interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 40s
     restart: unless-stopped
 
+  # Servicio en Python (FastAPI)
   departamentos:
     build:
       context: ./gestion-Departamentos
     container_name: departamentos
     environment:
-      # Supabase PostgreSQL Connection (Cloud)
+      # Supabase PostgreSQL Connection
       DEP_DATABASE_URL: ${DEP_DATABASE_URL}
+      # RabbitMQ Configuration (si llega a consumir eventos)
+      RABBITMQ_HOST: rabbitmq-broker
     networks:
       - microservices-net
     ports:
@@ -71,6 +96,9 @@ services:
       retries: 5
       start_period: 30s
     restart: unless-stopped
+
+  # NOTA: Para el Reto 3 deberás añadir aquí los servicios de
+  # 'notificaciones' y 'perfiles' siguiendo el mismo esquema.
 
 # =========================
 # Red interna
