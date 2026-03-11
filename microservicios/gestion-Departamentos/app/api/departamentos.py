@@ -1,9 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Path
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.schemas.departamento import DepartamentoCreate, DepartamentoOut
-from app.services.departamento_service import create_departamento, get_departamento, list_departamentos
+from app.services.departamento_service import (
+    create_departamento,
+    get_departamento,
+    list_departamentos,
+    delete_departamento,
+)
 
 router = APIRouter(prefix="/departamentos", tags=["departamentos"])
 
@@ -20,7 +25,15 @@ def post_departamento(payload: DepartamentoCreate, db: Session = Depends(get_db)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 @router.get("/{dep_id}", response_model=DepartamentoOut)
-def get_departamento_by_id(dep_id: str, db: Session = Depends(get_db)):
+def get_departamento_by_id(
+    dep_id: str = Path(..., min_length=1, description="ID del departamento"),
+    db: Session = Depends(get_db)
+):
+    if not dep_id or not dep_id.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El ID del departamento es requerido y no puede estar vacío"
+        )
     dep = get_departamento(db, dep_id)
     if not dep:
         raise HTTPException(status_code=404, detail=f"Departamento con id '{dep_id}' no existe")
