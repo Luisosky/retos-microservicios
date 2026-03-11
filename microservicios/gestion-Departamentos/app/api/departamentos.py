@@ -39,6 +39,24 @@ def get_departamento_by_id(
         raise HTTPException(status_code=404, detail=f"Departamento con id '{dep_id}' no existe")
     return dep
 
+@router.delete("/{dep_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_departamento_by_id(
+    dep_id: str = Path(..., min_length=1, description="ID del departamento a eliminar"),
+    db: Session = Depends(get_db)
+):
+    if not dep_id or not dep_id.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El ID del departamento es requerido y no puede estar vacío"
+        )
+    dep = get_departamento(db, dep_id)
+    if not dep:
+        raise HTTPException(status_code=404, detail=f"Departamento con id '{dep_id}' no existe")
+    try:
+        delete_departamento(db, dep_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
 @router.get("", response_model=list[DepartamentoOut])
 def get_departamentos(db: Session = Depends(get_db)):
     return list_departamentos(db)
