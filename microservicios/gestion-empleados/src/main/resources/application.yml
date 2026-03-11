@@ -33,6 +33,10 @@ services:
   departamentos:
     url: ${DEPARTAMENTOS_SERVICE_URL:http://localhost:8081}
 
+app:
+  messaging:
+    exchange: ${EMPLEADOS_EVENTS_EXCHANGE:empleados.events}
+
 logging:
   level:
     com.microservicios.empleados: INFO

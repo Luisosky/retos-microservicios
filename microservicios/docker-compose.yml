@@ -102,6 +102,35 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # Servicio de Notificaciones (consumidor de eventos)
+  notificaciones:
+    build:
+      context: ./gestion-notificaciones
+    container_name: notificaciones
+    env_file:
+      - ./.env
+    environment:
+      RABBITMQ_HOST: rabbitmq-broker
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-guest}
+      NOTIF_EXCHANGE: empleados.events
+      NOTIF_QUEUE: notificaciones.queue
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - microservices-net
+    ports:
+      - "8082:8082"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
   # NOTA: Para el Reto 3 deberás añadir aquí los servicios de
   # 'notificaciones' y 'perfiles' siguiendo el mismo esquema.
 

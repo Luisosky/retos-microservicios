@@ -121,4 +121,36 @@ public class EmpleadoController {
         Empleado empleado = empleadoService.obtenerEmpleadoPorId(id);
         return ResponseEntity.status(HttpStatus.OK).body(empleado);
     }
+
+    @DeleteMapping("/{id}")
+    @Operation(
+            summary = "Eliminar empleado por ID",
+            description = "Elimina un empleado por su número de empleado. Si la eliminación es exitosa, se publica el evento empleado.eliminado en RabbitMQ."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "204",
+                    description = "Empleado eliminado exitosamente"
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "Empleado no encontrado con el ID proporcionado"
+            ),
+            @ApiResponse(
+                    responseCode = "500",
+                    description = "Error interno del servidor"
+            )
+    })
+    public ResponseEntity<Void> eliminarEmpleado(
+            @Parameter(
+                    name = "id",
+                    description = "Número de empleado único (ej: EMP001)",
+                    required = true,
+                    example = "EMP001"
+            )
+            @PathVariable String id
+    ) {
+        empleadoService.eliminarEmpleado(id);
+        return ResponseEntity.noContent().build();
+    }
 }

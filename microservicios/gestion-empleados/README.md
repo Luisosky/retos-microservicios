@@ -84,6 +84,40 @@ Se eligió RabbitMQ para este proyecto porque ofrece un equilibrio sólido entre
 
 Para este sistema, RabbitMQ cubre mejor el caso de uso de eventos entre servicios sin sobrecargar la infraestructura.
 
+## Publicación de eventos del Servicio de Empleados
+
+El servicio publica eventos en RabbitMQ después de que la operación en base de datos es exitosa.
+
+- Exchange: `empleados.events`
+- Routing key al crear: `empleado.creado`
+- Routing key al eliminar: `empleado.eliminado`
+
+Si la publicación en el broker falla, la operación de base de datos no se revierte. El error se registra en logs para diagnóstico.
+
+### Contrato JSON: empleado.creado
+
+Se publica al ejecutar exitosamente `POST /empleado`:
+
+```json
+{
+  "id": "EMP001",
+  "nombre": "Juan",
+  "email": "juan.perez@empresa.com",
+  "departamentoId": "DEP001",
+  "fechaIngreso": "2024-01-15"
+}
+```
+
+### Contrato JSON: empleado.eliminado
+
+Se publica al ejecutar exitosamente `DELETE /empleado/{id}`:
+{
+   "id": "EMP001",
+   "nombre": "Juan",
+   "email": "juan.perez@empresa.com"
+}
+```
+
 ### Opción 2: Ejecución Local (sin Docker)
 
 Si necesitas ejecutar directamente en tu máquina para debugging:
