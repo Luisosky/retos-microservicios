@@ -21,9 +21,14 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq-broker
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
     ports:
       - "5672:5672"   # Puerto de mensajería (AMQP)
-      - "15672:15672" # Interfaz web de administración (guest/guest)
+      - "15672:15672" # Interfaz web de administración
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - microservices-net
     healthcheck:
@@ -51,8 +56,8 @@ services:
       # RabbitMQ Configuration
       SPRING_RABBITMQ_HOST: rabbitmq-broker
       SPRING_RABBITMQ_PORT: 5672
-      SPRING_RABBITMQ_USERNAME: guest
-      SPRING_RABBITMQ_PASSWORD: guest
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-guest}
       # Microservices Communication
       DEPARTAMENTOS_SERVICE_URL: http://departamentos:8081
       SERVER_PORT: 8080
@@ -112,4 +117,6 @@ networks:
 # =========================
 volumes:
   redis_data:
+    driver: local
+  rabbitmq_data:
     driver: local
