@@ -131,8 +131,67 @@ services:
       start_period: 30s
     restart: unless-stopped
 
-  # NOTA: Para el Reto 3 deberás añadir aquí los servicios de
-  # 'notificaciones' y 'perfiles' siguiendo el mismo esquema.
+  # Servicio de Perfiles (Laravel PHP) - Consumidor de eventos y CRUD de perfiles
+  perfiles:
+    build:
+      context: ./gestion-perfiles
+    container_name: perfiles-service
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${PERFILES_APP_KEY:-base64:changeme00000000000000000000000000000000000=}
+      APP_URL: http://localhost:8083
+      DB_CONNECTION: mysql
+      DB_HOST: mysql-perfiles
+      DB_PORT: 3306
+      DB_DATABASE: ${PERFILES_DB_DATABASE:-gestion_perfiles}
+      DB_USERNAME: ${PERFILES_DB_USERNAME:-perfiles_user}
+      DB_PASSWORD: ${PERFILES_DB_PASSWORD:-perfiles_pass}
+      RABBITMQ_HOST: rabbitmq-broker
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+      RABBITMQ_EXCHANGE: empleados.events
+      RABBITMQ_QUEUE: perfiles.queue
+      EMPLEADOS_SERVICE_URL: http://empleados-service:8080
+      DEPARTAMENTOS_SERVICE_URL: http://departamentos:8081
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mysql-perfiles:
+        condition: service_healthy
+    networks:
+      - microservices-net
+    ports:
+      - "8083:8083"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  mysql-perfiles:
+    image: mysql:8.0
+    container_name: mysql-perfiles
+    environment:
+      MYSQL_ROOT_PASSWORD: ${PERFILES_MYSQL_ROOT_PASSWORD:-root_pass}
+      MYSQL_DATABASE: ${PERFILES_DB_DATABASE:-gestion_perfiles}
+      MYSQL_USER: ${PERFILES_DB_USERNAME:-perfiles_user}
+      MYSQL_PASSWORD: ${PERFILES_DB_PASSWORD:-perfiles_pass}
+    volumes:
+      - mysql_perfiles_data:/var/lib/mysql
+    networks:
+      - microservices-net
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
 
 # =========================
 # Red interna
@@ -148,4 +207,6 @@ volumes:
   redis_data:
     driver: local
   rabbitmq_data:
+    driver: local
+  mysql_perfiles_data:
     driver: local
