@@ -84,6 +84,10 @@ class PerfilService
             [
                 'nombre'          => $payload['nombre'] ?? 'Sin nombre',
                 'email'           => $payload['email'] ?? '',
+                'telefono'        => '',
+                'direccion'       => '',
+                'ciudad'          => '',
+                'biografia'       => '',
                 'departamento_id' => $payload['departamentoId'] ?? null,
                 'activo'          => true,
             ]

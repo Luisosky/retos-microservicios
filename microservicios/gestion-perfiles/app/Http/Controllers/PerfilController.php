@@ -51,7 +51,7 @@ class PerfilController extends Controller
     }
 
     /**
-     * GET /api/perfiles/empleado/{empleadoId}
+     * GET /api/perfiles/{empleadoId}
      * Obtener un perfil por el ID del empleado.
      */
     public function showByEmpleado(string $empleadoId): JsonResponse
@@ -70,15 +70,19 @@ class PerfilController extends Controller
     }
 
     /**
-     * PUT /api/perfiles/{id}
-     * Actualizar un perfil existente.
+     * PUT /api/perfiles/{empleadoId}
+     * Actualizar un perfil existente por el ID del empleado.
      */
-    public function update(UpdatePerfilRequest $request, int $id): JsonResponse
+    public function updateByEmpleado(UpdatePerfilRequest $request, string $empleadoId): JsonResponse
     {
-        $perfil = $this->perfilService->encontrar($id);
+        if (empty(trim($empleadoId))) {
+            return response()->json(['message' => 'El ID de empleado no puede estar vacío.'], 400);
+        }
+
+        $perfil = $this->perfilService->encontrarPorEmpleadoId($empleadoId);
 
         if (!$perfil) {
-            return response()->json(['message' => 'Perfil no encontrado.'], 404);
+            return response()->json(['message' => 'Perfil no encontrado para ese empleado.'], 404);
         }
 
         $perfil = $this->perfilService->actualizar($perfil, $request->validated());

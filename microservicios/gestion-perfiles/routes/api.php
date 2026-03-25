@@ -14,10 +14,15 @@ Route::get('/health', [PerfilController::class, 'health']);
 
 // Rutas de perfiles
 Route::prefix('perfiles')->group(function () {
+    // Listar todos los perfiles
     Route::get('/', [PerfilController::class, 'index']);
+    
+    // Obtener perfil por empleadoId
+    Route::get('/{empleadoId}', [PerfilController::class, 'showByEmpleado']);
+    
+    // Actualizar perfil por empleadoId
+    Route::put('/{empleadoId}', [PerfilController::class, 'updateByEmpleado']);
+    
+    // Crear un nuevo perfil (uso interno/admin)
     Route::post('/', [PerfilController::class, 'store']);
-    Route::get('/empleado/{empleadoId}', [PerfilController::class, 'showByEmpleado']);
-    Route::get('/{id}', [PerfilController::class, 'show']);
-    Route::put('/{id}', [PerfilController::class, 'update']);
-    Route::delete('/{id}', [PerfilController::class, 'destroy']);
 });

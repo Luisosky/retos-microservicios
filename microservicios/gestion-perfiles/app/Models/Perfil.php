@@ -16,6 +16,10 @@ class Perfil extends Model
         'empleado_id',
         'nombre',
         'email',
+        'telefono',
+        'direccion',
+        'ciudad',
+        'biografia',
         'foto_url',
         'bio',
         'departamento_id',
@@ -24,6 +28,7 @@ class Perfil extends Model
 
     protected $casts = [
         'activo' => 'boolean',
+        'created_at' => 'datetime',
     ];
 
     protected $hidden = [
