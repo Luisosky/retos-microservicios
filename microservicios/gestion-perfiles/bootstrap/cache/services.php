@@ -27,7 +27,8 @@
     23 => 'Carbon\\Laravel\\ServiceProvider',
     24 => 'Termwind\\Laravel\\TermwindServiceProvider',
     25 => 'App\\Providers\\AppServiceProvider',
-    26 => 'App\\Providers\\RouteServiceProvider',
+    26 => 'App\\Providers\\EventServiceProvider',
+    27 => 'App\\Providers\\RouteServiceProvider',
   ),
   'eager' => 
   array (
@@ -44,7 +45,8 @@
     10 => 'Carbon\\Laravel\\ServiceProvider',
     11 => 'Termwind\\Laravel\\TermwindServiceProvider',
     12 => 'App\\Providers\\AppServiceProvider',
-    13 => 'App\\Providers\\RouteServiceProvider',
+    13 => 'App\\Providers\\EventServiceProvider',
+    14 => 'App\\Providers\\RouteServiceProvider',
   ),
   'deferred' => 
   array (

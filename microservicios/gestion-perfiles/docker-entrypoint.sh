@@ -55,6 +55,9 @@ echo "[PERFILES] Limpiando caché de configuración..."
 php artisan config:clear || true
 php artisan cache:clear || true
 
+echo "[PERFILES] Ejecutando scripts post-autoload de Composer..."
+composer run-script post-autoload-dump || true
+
 # Generate app key if not set
 if [ -z "$APP_KEY" ] || [ "$APP_KEY" = "" ]; then
   echo "[PERFILES] Generando APP_KEY..."
@@ -64,8 +67,8 @@ fi
 echo "[PERFILES] Ejecutando migraciones..."
 php artisan migrate --force
 
-echo "[PERFILES] Iniciando consumer de RabbitMQ en background..."
-php artisan perfiles:consume-eventos &
+echo "[PERFILES] Iniciando consumer de eventos de empleados desde RabbitMQ en background..."
+php artisan rabbitmq:listen-empleados &
 
 echo "[PERFILES] Iniciando servidor HTTP en puerto 8083..."
 exec php artisan serve --host=0.0.0.0 --port=8083

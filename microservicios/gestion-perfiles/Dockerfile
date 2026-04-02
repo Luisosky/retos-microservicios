@@ -30,19 +30,29 @@ RUN docker-php-ext-install \
     gd \
     opcache
 
-# Install AMQP and Redis extensions
-RUN pecl install amqp redis && docker-php-ext-enable amqp redis
+# Install Redis extension (php-amqplib es librería pura, no necesita compilación)
+RUN pecl install redis && docker-php-ext-enable redis
 
 # Install Composer
 COPY --from=composer:2.6 /usr/bin/composer /usr/bin/composer
+
+# Set Composer environment for better performance
+ENV COMPOSER_MEMORY_LIMIT=-1
 
 WORKDIR /var/www
 
 # Copy dependency files first (layer caching)
 COPY composer.json composer.lock* ./
 
-# Install PHP dependencies (no dev for production)
-RUN composer install --no-dev --no-interaction --optimize-autoloader --no-scripts
+# Install PHP dependencies (no dev para production)
+RUN composer install \
+    --no-dev \
+    --no-interaction \
+    --optimize-autoloader \
+    --prefer-dist \
+    --ignore-platform-reqs \
+    --no-scripts \
+    --verbose
 
 # Copy application source
 COPY . .
