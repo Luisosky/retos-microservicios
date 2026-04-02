@@ -3,8 +3,10 @@ FROM php:8.2-fpm-alpine AS base
 # Install system dependencies
 RUN apk add --no-cache \
     curl \
+    linux-headers \
     libpng-dev \
     libxml2-dev \
+    postgresql-dev \
     zip \
     unzip \
     git \
@@ -19,6 +21,8 @@ RUN apk add --no-cache \
 RUN docker-php-ext-install \
     pdo \
     pdo_mysql \
+    pdo_pgsql \
+    sockets \
     mbstring \
     exif \
     pcntl \
@@ -26,8 +30,8 @@ RUN docker-php-ext-install \
     gd \
     opcache
 
-# Install AMQP extension for RabbitMQ
-RUN pecl install amqp && docker-php-ext-enable amqp
+# Install AMQP and Redis extensions
+RUN pecl install amqp redis && docker-php-ext-enable amqp redis
 
 # Install Composer
 COPY --from=composer:2.6 /usr/bin/composer /usr/bin/composer

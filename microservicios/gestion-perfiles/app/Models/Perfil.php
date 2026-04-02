@@ -4,15 +4,24 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
 
 class Perfil extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory;
 
     protected $table = 'perfiles';
 
+    protected $primaryKey = 'id';
+
+    public $incrementing = false;
+
+    protected $keyType = 'string';
+
+    public $timestamps = false;
+
     protected $fillable = [
+        'id',
         'empleado_id',
         'nombre',
         'email',
@@ -20,18 +29,23 @@ class Perfil extends Model
         'direccion',
         'ciudad',
         'biografia',
-        'foto_url',
-        'bio',
-        'departamento_id',
-        'activo',
+        'fecha_creacion',
     ];
 
     protected $casts = [
-        'activo' => 'boolean',
-        'created_at' => 'datetime',
+        'fecha_creacion' => 'datetime',
     ];
 
-    protected $hidden = [
-        'deleted_at',
-    ];
+    protected static function booted(): void
+    {
+        static::creating(function (self $perfil): void {
+            if (!$perfil->id) {
+                $perfil->id = (string) Str::uuid();
+            }
+
+            if (!$perfil->fecha_creacion) {
+                $perfil->fecha_creacion = now();
+            }
+        });
+    }
 }

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Perfil;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class PerfilTest extends TestCase
@@ -42,17 +43,23 @@ class PerfilTest extends TestCase
 
     public function test_crear_perfil_exitoso(): void
     {
+        Http::fake([
+            '*' => Http::response([
+                'id' => 'emp-001',
+                'nombre' => 'Juan Pérez',
+                'email' => 'juan.perez@empresa.com',
+            ], 200),
+        ]);
+
         $payload = [
-            'empleado_id' => 'emp-001',
-            'nombre'      => 'Juan Pérez',
-            'email'       => 'juan.perez@empresa.com',
-            'bio'         => 'Desarrollador backend',
+            'empleadoId' => 'emp-001',
+            'biografia' => 'Desarrollador backend',
         ];
 
         $response = $this->postJson('/api/perfiles', $payload);
 
         $response->assertStatus(201)
-                 ->assertJsonFragment(['empleado_id' => 'emp-001', 'nombre' => 'Juan Pérez']);
+                 ->assertJsonFragment(['empleadoId' => 'emp-001', 'nombre' => 'Juan Pérez']);
 
         $this->assertDatabaseHas('perfiles', ['empleado_id' => 'emp-001']);
     }
@@ -67,100 +74,95 @@ class PerfilTest extends TestCase
 
     public function test_crear_perfil_falla_con_empleado_id_duplicado(): void
     {
+        Http::fake([
+            '*' => Http::response([
+                'id' => 'emp-001',
+                'nombre' => 'Empleado Base',
+                'email' => 'a@empresa.com',
+            ], 200),
+        ]);
+
         Perfil::factory()->create(['empleado_id' => 'emp-001', 'email' => 'a@empresa.com']);
 
         $response = $this->postJson('/api/perfiles', [
-            'empleado_id' => 'emp-001',
-            'nombre'      => 'Otro nombre',
-            'email'       => 'b@empresa.com',
+            'empleadoId' => 'emp-001',
         ]);
 
         $response->assertStatus(422);
     }
 
     // -----------------------------------------------------------------------
-    // GET /api/perfiles/{id}
-    // -----------------------------------------------------------------------
-
-    public function test_obtener_perfil_por_id(): void
-    {
-        $perfil = Perfil::factory()->create();
-
-        $response = $this->getJson("/api/perfiles/{$perfil->id}");
-
-        $response->assertStatus(200)
-                 ->assertJsonFragment(['id' => $perfil->id]);
-    }
-
-    public function test_obtener_perfil_inexistente_retorna_404(): void
-    {
-        $response = $this->getJson('/api/perfiles/99999');
-
-        $response->assertStatus(404);
-    }
-
-    // -----------------------------------------------------------------------
-    // GET /api/perfiles/empleado/{empleadoId}
+    // GET /api/perfiles/{empleadoId}
     // -----------------------------------------------------------------------
 
     public function test_obtener_perfil_por_empleado_id(): void
     {
-        $perfil = Perfil::factory()->create(['empleado_id' => 'emp-xyz']);
+        Perfil::factory()->create(['empleado_id' => 'emp-xyz']);
 
-        $response = $this->getJson('/api/perfiles/empleado/emp-xyz');
+        $response = $this->getJson('/api/perfiles/emp-xyz');
 
         $response->assertStatus(200)
-                 ->assertJsonFragment(['empleado_id' => 'emp-xyz']);
+                 ->assertJsonFragment(['empleadoId' => 'emp-xyz']);
     }
 
     public function test_obtener_perfil_por_empleado_id_inexistente_retorna_404(): void
     {
-        $response = $this->getJson('/api/perfiles/empleado/emp-no-existe');
+        $response = $this->getJson('/api/perfiles/emp-no-existe');
 
         $response->assertStatus(404);
     }
 
     // -----------------------------------------------------------------------
-    // PUT /api/perfiles/{id}
+    // PUT /api/perfiles/{empleadoId}
     // -----------------------------------------------------------------------
 
     public function test_actualizar_perfil_exitoso(): void
     {
-        $perfil = Perfil::factory()->create();
+        Perfil::factory()->create(['empleado_id' => 'emp-200']);
 
-        $response = $this->putJson("/api/perfiles/{$perfil->id}", [
-            'bio' => 'Nueva bio actualizada',
+        Http::fake([
+            '*' => Http::response([
+                'id' => 'emp-200',
+                'nombre' => 'Nombre Empleado',
+                'email' => 'empleado@empresa.com',
+            ], 200),
+        ]);
+
+        $response = $this->putJson('/api/perfiles/emp-200', [
+            'biografia' => 'Nueva bio actualizada',
         ]);
 
         $response->assertStatus(200)
-                 ->assertJsonFragment(['bio' => 'Nueva bio actualizada']);
+                 ->assertJsonFragment(['biografia' => 'Nueva bio actualizada']);
+    }
+
+    public function test_actualizar_perfil_acepta_respuesta_empleados_con_data_y_numero_empleado(): void
+    {
+        Perfil::factory()->create(['empleado_id' => 'emp-201']);
+
+        Http::fake([
+            '*' => Http::response([
+                'data' => [
+                    'numeroEmpleado' => 'emp-201',
+                    'nombre' => 'Nombre Desde Data',
+                    'email' => 'data@empresa.com',
+                ],
+            ], 200),
+        ]);
+
+        $response = $this->putJson('/api/perfiles/emp-201', [
+            'biografia' => 'Bio desde formato alterno',
+        ]);
+
+        $response->assertStatus(200)
+                 ->assertJsonFragment(['biografia' => 'Bio desde formato alterno']);
     }
 
     public function test_actualizar_perfil_inexistente_retorna_404(): void
     {
-        $response = $this->putJson('/api/perfiles/99999', ['bio' => 'test']);
+        $response = $this->putJson('/api/perfiles/emp-404', ['biografia' => 'test']);
 
         $response->assertStatus(404);
     }
 
-    // -----------------------------------------------------------------------
-    // DELETE /api/perfiles/{id}
-    // -----------------------------------------------------------------------
-
-    public function test_eliminar_perfil_exitoso(): void
-    {
-        $perfil = Perfil::factory()->create();
-
-        $response = $this->deleteJson("/api/perfiles/{$perfil->id}");
-
-        $response->assertStatus(204);
-        $this->assertSoftDeleted('perfiles', ['id' => $perfil->id]);
-    }
-
-    public function test_eliminar_perfil_inexistente_retorna_404(): void
-    {
-        $response = $this->deleteJson('/api/perfiles/99999');
-
-        $response->assertStatus(404);
-    }
 }

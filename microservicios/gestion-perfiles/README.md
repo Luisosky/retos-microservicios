@@ -17,10 +17,32 @@ Microservicio REST API construido con **Laravel 10 + PHP 8.2** para gestionar pe
 | GET    | `/api/health`                         | Health check del servicio           |
 | GET    | `/api/perfiles`                       | Listar perfiles (paginado)          |
 | POST   | `/api/perfiles`                       | Crear un nuevo perfil               |
-| GET    | `/api/perfiles/{id}`                  | Obtener perfil por ID               |
-| GET    | `/api/perfiles/empleado/{empleadoId}` | Obtener perfil por ID de empleado   |
-| PUT    | `/api/perfiles/{id}`                  | Actualizar perfil                   |
-| DELETE | `/api/perfiles/{id}`                  | Eliminar perfil (soft delete)       |
+| GET    | `/api/perfiles/{empleadoId}`          | Obtener perfil por ID de empleado   |
+| PUT    | `/api/perfiles/{empleadoId}`          | Actualizar perfil por empleadoId    |
+| PATCH  | `/api/perfiles/{empleadoId}`          | Actualización parcial por empleadoId|
+| DELETE | `/api/perfiles/{empleadoId}`          | Eliminar perfil por empleadoId      |
+| GET    | `/api/perfiles/id/{id}`               | Obtener perfil por ID interno (UUID)|
+| DELETE | `/api/perfiles/id/{id}`               | Eliminar perfil por ID interno      |
+
+## Contrato del perfil
+
+Los perfiles se exponen con este formato:
+
+```json
+{
+  "id": "string",
+  "empleadoId": "string",
+  "nombre": "string",
+  "email": "string",
+  "telefono": "string",
+  "direccion": "string",
+  "ciudad": "string",
+  "biografia": "string",
+  "fechaCreacion": "datetime"
+}
+```
+
+`nombre` y `email` se obtienen del servicio `gestion-empleados`. En `POST /api/perfiles` se valida primero que el empleado exista llamando al endpoint `GET /empleado/{id}` de ese servicio.
 
 ## Puerto
 
@@ -34,8 +56,10 @@ Ver [.env.example](.env.example) para la lista completa.
 
 ```bash
 # Desde la raíz del proyecto
-docker-compose up --build perfiles mysql-perfiles
+docker-compose up --build perfiles
 ```
+
+Si la base de datos está en la nube, define `PERFILES_DB_HOST` (y opcionalmente `PERFILES_DB_PORT`) en tu `.env` de la raíz.
 
 ## Tests
 

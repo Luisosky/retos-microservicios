@@ -137,20 +137,22 @@ services:
       context: ./gestion-perfiles
     container_name: perfiles-service
     environment:
-      # PHP Configuration
       APP_ENV: production
       APP_DEBUG: "false"
-      APP_KEY: ${PERFILES_APP_KEY:-}
-      
-      # RabbitMQ Configuration
+      APP_KEY: ${PERFILES_LARAVEL_APP_KEY:-}
+      APP_URL: http://localhost:8083
+      EMPLEADOS_SERVICE_URL: http://empleados-service:8080
+
+      DB_CONNECTION: pgsql
+      DATABASE_URL: ${PERFILES_DATABASE_URL:-${PERFILES_APP_KEY}}
+
       RABBITMQ_HOST: rabbitmq-broker
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: ${RABBITMQ_DEFAULT_USER:-guest}
       RABBITMQ_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
       RABBITMQ_EXCHANGE: empleados.events
       RABBITMQ_QUEUE: perfiles.queue
-      
-      # Cache & Session Configuration
+
       CACHE_DRIVER: redis
       SESSION_DRIVER: redis
       REDIS_HOST: redis

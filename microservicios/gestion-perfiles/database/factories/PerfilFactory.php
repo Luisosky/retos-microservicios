@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\Perfil;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Support\Str;
 
 class PerfilFactory extends Factory
 {
@@ -12,13 +13,15 @@ class PerfilFactory extends Factory
     public function definition(): array
     {
         return [
+            'id'              => (string) Str::uuid(),
             'empleado_id'     => $this->faker->unique()->uuid(),
             'nombre'          => $this->faker->name(),
             'email'           => $this->faker->unique()->safeEmail(),
-            'foto_url'        => $this->faker->optional()->imageUrl(200, 200, 'people'),
-            'bio'             => $this->faker->optional()->text(200),
-            'departamento_id' => $this->faker->optional()->uuid(),
-            'activo'          => true,
+            'telefono'        => $this->faker->optional()->numerify('3#########'),
+            'direccion'       => $this->faker->optional()->streetAddress(),
+            'ciudad'          => $this->faker->optional()->city(),
+            'biografia'       => $this->faker->optional()->text(200),
+            'fecha_creacion'  => now(),
         ];
     }
 }
