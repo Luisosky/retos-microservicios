@@ -131,6 +131,30 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # Servicio de Autenticacion en C# (ASP.NET Core)
+  autenticacion:
+    build:
+      context: ./servicio-Autenticación
+    container_name: autenticacion-service
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8084
+      JWT_ISSUER: auth-service
+      JWT_AUDIENCE: microservices-clients
+      JWT_SECRET: ${JWT_SECRET:-CHANGE_THIS_SECRET_IN_ENV}
+      JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES:-60}
+    networks:
+      - microservices-net
+    ports:
+      - "8084:8084"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
   # Servicio de Perfiles en PHP (Laravel) - Consumidor y API
   perfiles:
     build:
