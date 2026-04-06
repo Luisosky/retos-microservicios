@@ -1,22 +1,46 @@
 # Servicio de Autenticacion (C# / ASP.NET Core)
 
-Microservicio REST de autenticacion en C# con JWT, siguiendo el estilo de los servicios Flask/Spring Boot del workspace.
+Proveedor de identidad del sistema con JWT de acceso, recuperacion de contrasena e integracion por eventos con RabbitMQ.
 
-## Endpoints
+## Endpoints principales
 
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `POST /api/auth/validate`
-- `GET /api/auth/me` (requiere `Authorization: Bearer <token>`)
+- `POST /auth/login`
+- `POST /auth/recover-password`
+- `POST /auth/reset-password`
 - `GET /health`
+
+Compatibilidad legacy:
+
+- `POST /api/auth/login`
+- `POST /api/auth/recover-password`
+- `POST /api/auth/reset-password`
+
+## Integracion por eventos
+
+Consume:
+
+- `empleado.creado` -> crea o reactiva usuario, genera token de establecimiento y publica `usuario.creado`
+- `empleado.eliminado` -> inhabilita usuario y expira tokens activos
+
+Publica:
+
+- `usuario.creado` con payload `{ email, token }`
+- `usuario.recuperacion` con payload `{ email, token }`
 
 ## Variables de entorno
 
+- `AUTH_DATABASE_URL` (si no existe, usa `DEP_DATABASE_URL` o `NOTIF_DATABASE_URL`)
 - `JWT_ISSUER` (default: `auth-service`)
 - `JWT_AUDIENCE` (default: `microservices-clients`)
 - `JWT_SECRET` (obligatoria en entornos reales)
 - `JWT_EXPIRATION_MINUTES` (default: `60`)
-- `ASPNETCORE_URLS` (default: `http://+:8084`)
+- `RESET_TOKEN_EXPIRATION_MINUTES` (default: `30`)
+- `RABBITMQ_HOST` (default: `rabbitmq-broker`)
+- `RABBITMQ_PORT` (default: `5672`)
+- `RABBITMQ_USERNAME` (default: `guest`)
+- `RABBITMQ_PASSWORD` (default: `guest`)
+- `AUTH_EXCHANGE` (default: `empleados.events`)
+- `AUTH_QUEUE` (default: `auth.queue`)
 
 ## Levantar con Docker
 

@@ -139,10 +139,21 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8084
+      AUTH_DATABASE_URL: ${AUTH_DATABASE_URL}
       JWT_ISSUER: auth-service
       JWT_AUDIENCE: microservices-clients
       JWT_SECRET: ${JWT_SECRET:-CHANGE_THIS_SECRET_IN_ENV}
       JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES:-60}
+      RESET_TOKEN_EXPIRATION_MINUTES: ${RESET_TOKEN_EXPIRATION_MINUTES:-30}
+      RABBITMQ_HOST: rabbitmq-broker
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-guest}
+      AUTH_EXCHANGE: empleados.events
+      AUTH_QUEUE: auth.queue
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
     networks:
       - microservices-net
     ports:

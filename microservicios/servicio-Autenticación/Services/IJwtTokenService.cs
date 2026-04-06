@@ -6,5 +6,5 @@ public interface IJwtTokenService
 {
     string GenerateToken(User user);
     int GetTokenDurationSeconds();
-    bool TryValidateToken(string token, out string email, out string role);
+    bool TryValidateToken(string token, out string subject, out string role);
 }

@@ -43,6 +43,7 @@ public class JwtTokenService : IJwtTokenService
     public string GenerateToken(User user)
     {
         var expiresAt = DateTime.UtcNow.AddMinutes(GetExpirationMinutes());
+        var now = DateTimeOffset.UtcNow;
         var credentials = new SigningCredentials(
             _tokenValidationParameters.IssuerSigningKey!,
             SecurityAlgorithms.HmacSha256
@@ -53,10 +54,11 @@ public class JwtTokenService : IJwtTokenService
             audience: _tokenValidationParameters.ValidAudience,
             claims:
             [
-                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-                new Claim(JwtRegisteredClaimNames.Email, user.Email),
-                new Claim(ClaimTypes.Email, user.Email),
-                new Claim(ClaimTypes.Role, user.Role)
+                new Claim(JwtRegisteredClaimNames.Sub, user.Email),
+                new Claim(ClaimTypes.Name, user.Email),
+                new Claim(ClaimTypes.Role, user.Role),
+                new Claim("role", user.Role),
+                new Claim(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
             ],
             notBefore: DateTime.UtcNow,
             expires: expiresAt,
@@ -71,9 +73,9 @@ public class JwtTokenService : IJwtTokenService
         return GetExpirationMinutes() * 60;
     }
 
-    public bool TryValidateToken(string token, out string email, out string role)
+    public bool TryValidateToken(string token, out string subject, out string role)
     {
-        email = string.Empty;
+        subject = string.Empty;
         role = string.Empty;
 
         if (string.IsNullOrWhiteSpace(token))
@@ -86,14 +88,15 @@ public class JwtTokenService : IJwtTokenService
             var handler = new JwtSecurityTokenHandler();
             var principal = handler.ValidateToken(token, _tokenValidationParameters, out _);
 
-            email = principal.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Email)?.Value
-                ?? principal.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Email)?.Value
+            subject = principal.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub)?.Value
+                ?? principal.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name)?.Value
                 ?? string.Empty;
 
             role = principal.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value
+                ?? principal.Claims.FirstOrDefault(c => c.Type == "role")?.Value
                 ?? string.Empty;
 
-            return !string.IsNullOrWhiteSpace(email);
+            return !string.IsNullOrWhiteSpace(subject);
         }
         catch
         {

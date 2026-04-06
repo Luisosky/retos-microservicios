@@ -1,58 +1,49 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using ServicioAutenticacion.Data;
 using ServicioAutenticacion.Dtos;
+using ServicioAutenticacion.Messaging;
 using ServicioAutenticacion.Models;
 using ServicioAutenticacion.Services;
 
 namespace ServicioAutenticacion.Controllers;
 
 [ApiController]
+[Route("auth")]
 [Route("api/auth")]
 public class AuthController : ControllerBase
 {
-    private readonly IUserRepository _userRepository;
+    private readonly AuthDbContext _dbContext;
     private readonly IJwtTokenService _jwtTokenService;
+    private readonly IRabbitMqPublisher _publisher;
+    private readonly IConfiguration _configuration;
 
-    public AuthController(IUserRepository userRepository, IJwtTokenService jwtTokenService)
+    public AuthController(
+        AuthDbContext dbContext,
+        IJwtTokenService jwtTokenService,
+        IRabbitMqPublisher publisher,
+        IConfiguration configuration)
     {
-        _userRepository = userRepository;
+        _dbContext = dbContext;
         _jwtTokenService = jwtTokenService;
-    }
-
-    [HttpPost("register")]
-    public ActionResult<AuthResponse> Register([FromBody] RegisterRequest request)
-    {
-        var email = request.Email.Trim().ToLowerInvariant();
-
-        if (_userRepository.FindByEmail(email) is not null)
-        {
-            return Conflict(new { message = "El usuario ya existe" });
-        }
-
-        var user = new User
-        {
-            Email = email,
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password),
-            Role = string.IsNullOrWhiteSpace(request.Role) ? "user" : request.Role.Trim().ToLowerInvariant()
-        };
-
-        var created = _userRepository.Create(user);
-        if (!created)
-        {
-            return Conflict(new { message = "No fue posible registrar el usuario" });
-        }
-
-        var token = _jwtTokenService.GenerateToken(user);
-        return Created(string.Empty, BuildAuthResponse(user, token));
+        _publisher = publisher;
+        _configuration = configuration;
     }
 
     [HttpPost("login")]
-    public ActionResult<AuthResponse> Login([FromBody] LoginRequest request)
+    public async Task<ActionResult<AuthResponse>> Login([FromBody] LoginRequest request)
     {
-        var email = request.Email.Trim().ToLowerInvariant();
-        var user = _userRepository.FindByEmail(email);
+        var identifier = request.GetIdentifier();
+        if (string.IsNullOrWhiteSpace(identifier))
+        {
+            return BadRequest(new { message = "Debe enviar usuario o email" });
+        }
 
-        if (user is null || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
+        var user = await _dbContext.Users.FirstOrDefaultAsync(x => x.Email == identifier);
+
+        if (user is null || !user.IsActive || string.IsNullOrWhiteSpace(user.PasswordHash)
+            || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
         {
             return Unauthorized(new { message = "Credenciales invalidas" });
         }
@@ -61,15 +52,82 @@ public class AuthController : ControllerBase
         return Ok(BuildAuthResponse(user, token));
     }
 
+    [HttpPost("recover-password")]
+    public async Task<IActionResult> RecoverPassword([FromBody] RecoverPasswordRequest request)
+    {
+        var email = request.Email.Trim().ToLowerInvariant();
+        var user = await _dbContext.Users.FirstOrDefaultAsync(x => x.Email == email && x.IsActive);
+
+        if (user is null)
+        {
+            return Ok(new { message = "Si el correo existe, se enviaron instrucciones de recuperacion" });
+        }
+
+        var activeTokens = await _dbContext.PasswordResetTokens
+            .Where(x => x.UserId == user.Id && !x.IsUsed && x.ExpiresAt > DateTimeOffset.UtcNow)
+            .ToListAsync();
+
+        foreach (var token in activeTokens)
+        {
+            token.IsUsed = true;
+        }
+
+        var recoveryToken = new PasswordResetToken
+        {
+            UserId = user.Id,
+            Token = Guid.NewGuid().ToString(),
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(GetResetTokenExpirationMinutes()),
+            IsUsed = false
+        };
+
+        _dbContext.PasswordResetTokens.Add(recoveryToken);
+        await _dbContext.SaveChangesAsync();
+
+        await _publisher.PublishAsync("usuario.recuperacion", new
+        {
+            email,
+            token = recoveryToken.Token
+        });
+
+        return Ok(new { message = "Si el correo existe, se enviaron instrucciones de recuperacion" });
+    }
+
+    [HttpPost("reset-password")]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
+    {
+        var tokenValue = request.Token.Trim();
+        var resetToken = await _dbContext.PasswordResetTokens
+            .Include(x => x.User)
+            .FirstOrDefaultAsync(x => x.Token == tokenValue);
+
+        if (resetToken is null || resetToken.IsUsed || resetToken.ExpiresAt <= DateTimeOffset.UtcNow || resetToken.User is null)
+        {
+            return BadRequest(new { message = "Token de recuperacion invalido o expirado" });
+        }
+
+        if (!resetToken.User.IsActive)
+        {
+            return BadRequest(new { message = "Usuario inhabilitado" });
+        }
+
+        resetToken.User.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+        resetToken.User.UpdatedAt = DateTimeOffset.UtcNow;
+        resetToken.IsUsed = true;
+
+        await _dbContext.SaveChangesAsync();
+
+        return Ok(new { message = "Contrasena actualizada correctamente" });
+    }
+
     [HttpPost("validate")]
     public IActionResult ValidateToken([FromBody] ValidateTokenRequest request)
     {
-        var isValid = _jwtTokenService.TryValidateToken(request.Token, out var email, out var role);
+        var isValid = _jwtTokenService.TryValidateToken(request.Token, out var subject, out var role);
 
         return Ok(new
         {
             valid = isValid,
-            email,
+            subject,
             role
         });
     }
@@ -78,10 +136,12 @@ public class AuthController : ControllerBase
     [HttpGet("me")]
     public IActionResult Me()
     {
-        var email = User.Claims.FirstOrDefault(c => c.Type.EndsWith("email", StringComparison.OrdinalIgnoreCase))?.Value;
+        var subject = User.Claims.FirstOrDefault(c => c.Type.EndsWith("nameidentifier", StringComparison.OrdinalIgnoreCase))?.Value
+            ?? User.Claims.FirstOrDefault(c => c.Type.EndsWith("name", StringComparison.OrdinalIgnoreCase))?.Value
+            ?? User.Claims.FirstOrDefault(c => c.Type.EndsWith("sub", StringComparison.OrdinalIgnoreCase))?.Value;
         var role = User.Claims.FirstOrDefault(c => c.Type.EndsWith("role", StringComparison.OrdinalIgnoreCase))?.Value;
 
-        return Ok(new { email, role });
+        return Ok(new { subject, role });
     }
 
     private AuthResponse BuildAuthResponse(User user, string token)
@@ -94,5 +154,13 @@ public class AuthController : ControllerBase
             Email = user.Email,
             Role = user.Role
         };
+    }
+
+    private int GetResetTokenExpirationMinutes()
+    {
+        var raw = Environment.GetEnvironmentVariable("RESET_TOKEN_EXPIRATION_MINUTES")
+            ?? _configuration["Auth:ResetTokenExpirationMinutes"];
+
+        return int.TryParse(raw, out var minutes) && minutes > 0 ? minutes : 30;
     }
 }

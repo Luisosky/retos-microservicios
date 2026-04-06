@@ -53,6 +53,16 @@ class EmpleadoEventsConsumer:
                     queue=settings.queue_name,
                     routing_key="empleado.eliminado",
                 )
+                channel.queue_bind(
+                    exchange=settings.exchange_name,
+                    queue=settings.queue_name,
+                    routing_key="usuario.creado",
+                )
+                channel.queue_bind(
+                    exchange=settings.exchange_name,
+                    queue=settings.queue_name,
+                    routing_key="usuario.recuperacion",
+                )
 
                 def callback(ch, method, properties, body):
                     try:
@@ -68,6 +78,15 @@ class EmpleadoEventsConsumer:
                             destinatario = payload.get("email", "")
                             mensaje = "Su cuenta ha sido desvinculada"
                             empleado_id = payload.get("id", "")
+                        elif method.routing_key in {"usuario.creado", "usuario.recuperacion"}:
+                            tipo = "SEGURIDAD"
+                            destinatario = payload.get("email", "")
+                            token = payload.get("token", "")
+                            mensaje = (
+                                "Para establecer o recuperar su contrasena, utilice este token: "
+                                f"{token}"
+                            )
+                            empleado_id = payload.get("id", "auth-security")
                         else:
                             ch.basic_ack(delivery_tag=method.delivery_tag)
                             return
