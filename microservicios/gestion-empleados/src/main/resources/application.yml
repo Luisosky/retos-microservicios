@@ -9,7 +9,7 @@ spring:
   data:
     mongodb:
       uri: ${MONGODB_URI:mongodb://localhost:27017/empleados-db}
-      auto-index-creation: true
+      auto-index-creation: false
       # Configuración de conexión pool para mejor rendimiento
       connection-string: ${MONGODB_URI:mongodb://localhost:27017/empleados-db}
       # Timeouts y configuración de reconexión

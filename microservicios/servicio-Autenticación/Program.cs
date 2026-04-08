@@ -29,14 +29,29 @@ if (string.IsNullOrWhiteSpace(authDatabaseUrl))
 
 authDatabaseUrl = NormalizePostgresConnectionString(authDatabaseUrl);
 
-builder.Services.AddDbContext<AuthDbContext>(options => options.UseNpgsql(authDatabaseUrl, npgsqlOptions =>
+authDatabaseUrl = NormalizePostgresConnectionString(authDatabaseUrl);
+
+// Add connection pooling parameters to connection string if not already present
+if (!authDatabaseUrl.Contains("MaxPoolSize", StringComparison.OrdinalIgnoreCase))
 {
-    npgsqlOptions.CommandTimeout(20);
-    npgsqlOptions.EnableRetryOnFailure(
-        maxRetryCount: 1,
-        maxRetryDelay: TimeSpan.FromSeconds(1),
-        errorCodesToAdd: null);
-}));
+    var separator = authDatabaseUrl.Contains("?") ? "&" : "?";
+    authDatabaseUrl += $"{separator}MaxPoolSize=25;MinPoolSize=5;KeepAlive=120";
+}
+
+builder.Services.AddDbContext<AuthDbContext>(options => 
+{
+    options.UseNpgsql(authDatabaseUrl, npgsqlOptions =>
+    {
+        // Increase command timeout to handle remote database latency
+        npgsqlOptions.CommandTimeout(30);
+        
+        // Retry transient failures
+        npgsqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 2,
+            maxRetryDelay: TimeSpan.FromSeconds(2),
+            errorCodesToAdd: null);
+    });
+});
 
 var jwtSection = builder.Configuration.GetSection("Jwt");
 var issuer = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? jwtSection["Issuer"] ?? "auth-service";

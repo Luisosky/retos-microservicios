@@ -2,6 +2,7 @@ package com.microservicios.empleados.config;
 
 import org.conscrypt.Conscrypt;
 import org.springframework.boot.autoconfigure.mongo.MongoClientSettingsBuilderCustomizer;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import jakarta.annotation.PostConstruct;
@@ -14,6 +15,9 @@ import java.security.Security;
 @Configuration
 public class MongoConfig {
 
+    @Value("${app.mongo.useConscrypt:false}")
+    private boolean useConscrypt;
+
     /**
      * Registers Conscrypt (BoringSSL-based) as the top security provider.
      * This completely replaces Sun JSSE for all TLS connections, fixing the
@@ -21,10 +25,14 @@ public class MongoConfig {
      */
     @PostConstruct
     public void installConscrypt() {
+        if (!useConscrypt) {
+            return;
+        }
+
         try {
             Security.insertProviderAt(Conscrypt.newProvider(), 1);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to install Conscrypt security provider", e);
+            // Keep default JVM TLS stack if Conscrypt cannot be installed.
         }
     }
 
@@ -33,6 +41,10 @@ public class MongoConfig {
      */
     @Bean
     public MongoClientSettingsBuilderCustomizer mongoSslCustomizer() {
+        if (!useConscrypt) {
+            return builder -> { };
+        }
+
         return builder -> {
             try {
                 TrustManagerFactory tmf = TrustManagerFactory
@@ -49,7 +61,7 @@ public class MongoConfig {
                         .context(sslContext)
                 );
             } catch (Exception e) {
-                throw new RuntimeException("Failed to configure MongoDB SSLContext via Conscrypt", e);
+                // Keep default SSL configuration if custom context creation fails.
             }
         };
     }
