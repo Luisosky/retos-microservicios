@@ -29,14 +29,16 @@ if (string.IsNullOrWhiteSpace(authDatabaseUrl))
 
 authDatabaseUrl = NormalizePostgresConnectionString(authDatabaseUrl);
 
-authDatabaseUrl = NormalizePostgresConnectionString(authDatabaseUrl);
-
-// Add connection pooling parameters to connection string if not already present
-if (!authDatabaseUrl.Contains("MaxPoolSize", StringComparison.OrdinalIgnoreCase))
+// Ensure pooling settings are added using a proper Npgsql builder.
+// String concatenation can accidentally mutate credentials when the
+// connection string is already in key/value format.
+var csBuilder = new NpgsqlConnectionStringBuilder(authDatabaseUrl)
 {
-    var separator = authDatabaseUrl.Contains("?") ? "&" : "?";
-    authDatabaseUrl += $"{separator}MaxPoolSize=25;MinPoolSize=5;KeepAlive=120";
-}
+    MaxPoolSize = 25,
+    MinPoolSize = 5,
+    KeepAlive = 120
+};
+authDatabaseUrl = csBuilder.ConnectionString;
 
 builder.Services.AddDbContext<AuthDbContext>(options => 
 {
@@ -103,10 +105,21 @@ app.MapGet("/health", () => Results.Ok(new
     timestamp = DateTimeOffset.UtcNow
 }));
 
-using (var scope = app.Services.CreateScope())
+// Only ensure created in development to avoid startup failures
+if (app.Environment.IsDevelopment())
 {
-    var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
-    db.Database.EnsureCreated();
+    try
+    {
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+            db.Database.EnsureCreated();
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Warning: Could not create database: {ex.Message}");
+    }
 }
 
 app.Run();

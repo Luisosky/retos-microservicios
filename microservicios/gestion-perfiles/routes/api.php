@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Route;
 Route::get('/health', [PerfilController::class, 'health']);
 
 // Rutas de perfiles
-Route::prefix('perfiles')->group(function () {
+Route::prefix('perfiles')->middleware('jwt.auth')->group(function () {
     // Listar todos los perfiles
     Route::get('', [PerfilController::class, 'index']);
     Route::get('/', [PerfilController::class, 'index']);
@@ -38,7 +38,7 @@ Route::prefix('perfiles')->group(function () {
 });
 
 // Compatibilidad con clientes legacy que usan /api/perfil
-Route::prefix('perfil')->group(function () {
+Route::prefix('perfil')->middleware('jwt.auth')->group(function () {
     Route::get('', [PerfilController::class, 'index']);
     Route::get('/', [PerfilController::class, 'index']);
     Route::post('', [PerfilController::class, 'store']);

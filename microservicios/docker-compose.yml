@@ -61,6 +61,9 @@ services:
       # Microservices Communication
       DEPARTAMENTOS_SERVICE_URL: http://departamentos:8081
       SERVER_PORT: 8080
+      JWT_ISSUER: auth-service
+      JWT_AUDIENCE: microservices-clients
+      JWT_SECRET: ${JWT_SECRET:-SuperSecretKeyWithMoreThan32CharactersForJWTTokenSigning}
     depends_on:
       redis:
         condition: service_healthy
@@ -88,6 +91,9 @@ services:
     environment:
       # Supabase PostgreSQL Connection
       DEP_DATABASE_URL: ${DEP_DATABASE_URL}
+      JWT_ISSUER: auth-service
+      JWT_AUDIENCE: microservices-clients
+      JWT_SECRET: ${JWT_SECRET:-SuperSecretKeyWithMoreThan32CharactersForJWTTokenSigning}
       # RabbitMQ Configuration (si llega a consumir eventos)
       RABBITMQ_HOST: rabbitmq-broker
     networks:
@@ -136,13 +142,14 @@ services:
     build:
       context: ./servicio-Autenticación
     container_name: autenticacion-service
+    env_file:
+      - ./.env
     environment:
-      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8084
-      AUTH_DATABASE_URL: ${AUTH_DATABASE_URL}
       JWT_ISSUER: auth-service
       JWT_AUDIENCE: microservices-clients
-      JWT_SECRET: ${JWT_SECRET:-CHANGE_THIS_SECRET_IN_ENV}
+      JWT_SECRET: ${JWT_SECRET:-SuperSecretKeyWithMoreThan32CharactersForJWTTokenSigning}
       JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES:-60}
       RESET_TOKEN_EXPIRATION_MINUTES: ${RESET_TOKEN_EXPIRATION_MINUTES:-30}
       RABBITMQ_HOST: rabbitmq-broker
@@ -177,6 +184,9 @@ services:
       APP_KEY: ${PERFILES_LARAVEL_APP_KEY:-}
       APP_URL: http://localhost:8083
       EMPLEADOS_SERVICE_URL: http://empleados-service:8080
+      JWT_ISSUER: auth-service
+      JWT_AUDIENCE: microservices-clients
+      JWT_SECRET: ${JWT_SECRET:-SuperSecretKeyWithMoreThan32CharactersForJWTTokenSigning}
 
       DB_CONNECTION: pgsql
       DATABASE_URL: ${PERFILES_DATABASE_URL:-${PERFILES_APP_KEY}}
