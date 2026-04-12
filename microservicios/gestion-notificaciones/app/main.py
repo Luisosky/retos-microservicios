@@ -1,7 +1,8 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 
 def _load_root_env_file() -> None:
@@ -25,7 +26,10 @@ consumer = EmpleadoEventsConsumer()
 
 @app.middleware("http")
 async def jwt_auth_middleware(request: Request, call_next):
-    validate_jwt_or_401(request)
+    try:
+        validate_jwt_or_401(request)
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
     return await call_next(request)
 
 
