@@ -217,10 +217,10 @@ services:
     image: node:20-alpine
     container_name: interfaz-web
     working_dir: /app
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    command: sh -c "npm ci --frozen-lockfile && npm run dev -- --host 0.0.0.0 --port 5173"
     volumes:
       - ./interfaces/reac/auraRRHH/auraRRHH:/app
-      - /app/node_modules
+      - frontend-node-modules:/app/node_modules
     networks:
       - microservices-net
     ports:
@@ -253,4 +253,6 @@ volumes:
   redis_data:
     driver: local
   rabbitmq_data:
+    driver: local
+  frontend-node-modules:
     driver: local
