@@ -212,6 +212,32 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # Interfaz web (React + Vite)
+  interfaz:
+    image: node:20-alpine
+    container_name: interfaz-web
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    volumes:
+      - ./interfaces/reac/auraRRHH/auraRRHH:/app
+      - /app/node_modules
+    networks:
+      - microservices-net
+    ports:
+      - "5173:5173"
+    depends_on:
+      autenticacion:
+        condition: service_healthy
+      empleados-service:
+        condition: service_healthy
+      departamentos:
+        condition: service_healthy
+      notificaciones:
+        condition: service_healthy
+      perfiles:
+        condition: service_healthy
+    restart: unless-stopped
+
   
 # =========================
 # Red interna

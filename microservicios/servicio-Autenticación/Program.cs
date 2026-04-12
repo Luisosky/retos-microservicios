@@ -29,14 +29,14 @@ if (string.IsNullOrWhiteSpace(authDatabaseUrl))
 
 authDatabaseUrl = NormalizePostgresConnectionString(authDatabaseUrl);
 
-authDatabaseUrl = NormalizePostgresConnectionString(authDatabaseUrl);
-
-// Add connection pooling parameters to connection string if not already present
-if (!authDatabaseUrl.Contains("MaxPoolSize", StringComparison.OrdinalIgnoreCase))
+// Configure pooling via Npgsql builder to avoid malformed connection strings.
+var csb = new NpgsqlConnectionStringBuilder(authDatabaseUrl)
 {
-    var separator = authDatabaseUrl.Contains("?") ? "&" : "?";
-    authDatabaseUrl += $"{separator}MaxPoolSize=25;MinPoolSize=5;KeepAlive=120";
-}
+    MaxPoolSize = 25,
+    MinPoolSize = 5,
+    KeepAlive = 120
+};
+authDatabaseUrl = csb.ConnectionString;
 
 builder.Services.AddDbContext<AuthDbContext>(options => 
 {
