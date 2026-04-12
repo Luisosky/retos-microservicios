@@ -32,5 +32,6 @@ class Kernel extends HttpKernel
     protected $middlewareAliases = [
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         'bindings' => \Illuminate\Routing\Middleware\SubstituteBindings::class,
+        'jwt.auth' => \App\Http\Middleware\ValidateJwtToken::class,
     ];
 }

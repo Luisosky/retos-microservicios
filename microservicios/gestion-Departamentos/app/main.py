@@ -10,8 +10,15 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from app.api.departamentos import router as departamentos_router
+from app.core.security import validate_jwt_or_401
 
 app = FastAPI(title="Servicio de Departamentos", version="1.0.0")
+
+
+@app.middleware("http")
+async def jwt_auth_middleware(request: Request, call_next):
+    validate_jwt_or_401(request)
+    return await call_next(request)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -22,3 +29,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(status_code=400, content={"detail": "Datos de entrada inválidos", "errores": errors})
 
 app.include_router(departamentos_router)
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}

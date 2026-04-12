@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 
 def _load_root_env_file() -> None:
@@ -16,10 +16,17 @@ _load_root_env_file()
 
 from app.api.notificaciones import router as notificaciones_router
 from app.core.database import Base, engine
+from app.core.security import validate_jwt_or_401
 from app.messaging.consumer import EmpleadoEventsConsumer
 
 app = FastAPI(title="Servicio de Notificaciones", version="1.0.0")
 consumer = EmpleadoEventsConsumer()
+
+
+@app.middleware("http")
+async def jwt_auth_middleware(request: Request, call_next):
+    validate_jwt_or_401(request)
+    return await call_next(request)
 
 
 @app.on_event("startup")
