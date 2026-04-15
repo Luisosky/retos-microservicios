@@ -40,7 +40,7 @@ public class DepartamentoClient {
             String idLimpio = departamentoId.trim();
             String url = departamentosServiceUrl + "/departamentos/" + idLimpio;
             log.info("Consultando departamento en: {}", url);
-            
+
             ResponseEntity<DepartamentoDto> response = restTemplate.getForEntity(
                     url,
                     DepartamentoDto.class

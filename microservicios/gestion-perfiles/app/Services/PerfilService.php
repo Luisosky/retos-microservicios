@@ -89,11 +89,20 @@ class PerfilService
         ];
         $statusError = null;
         $rawEmpleado = null;
+        $authorizationHeader = request()?->header('Authorization');
 
         foreach ($rutasConsulta as $ruta) {
             try {
-                $response = Http::timeout(5)
-                    ->acceptJson()
+                $httpRequest = Http::timeout(5)
+                    ->acceptJson();
+
+                if (is_string($authorizationHeader) && trim($authorizationHeader) !== '') {
+                    $httpRequest = $httpRequest->withHeaders([
+                        'Authorization' => $authorizationHeader,
+                    ]);
+                }
+
+                $response = $httpRequest
                     ->get("{$baseUrl}{$ruta}");
             } catch (ConnectionException $e) {
                 throw new RuntimeException('No fue posible conectar con el servicio de empleados.', 0, $e);

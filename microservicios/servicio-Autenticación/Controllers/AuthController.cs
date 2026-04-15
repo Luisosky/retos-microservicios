@@ -56,11 +56,30 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> RecoverPassword([FromBody] RecoverPasswordRequest request)
     {
         var email = request.Email.Trim().ToLowerInvariant();
-        var user = await _dbContext.Users.FirstOrDefaultAsync(x => x.Email == email && x.IsActive);
+        var user = await _dbContext.Users.FirstOrDefaultAsync(x => x.Email == email);
 
         if (user is null)
         {
-            return Ok(new { message = "Si el correo existe, se enviaron instrucciones de recuperacion" });
+            // Fallback resiliente: si el alta por evento fallo, permitir crear usuario
+            // en auth al solicitar recuperacion para no bloquear el flujo.
+            user = new User
+            {
+                Email = email,
+                PasswordHash = string.Empty,
+                Role = "USER",
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            };
+
+            _dbContext.Users.Add(user);
+            await _dbContext.SaveChangesAsync();
+        }
+        else if (!user.IsActive)
+        {
+            user.IsActive = true;
+            user.UpdatedAt = DateTimeOffset.UtcNow;
+            await _dbContext.SaveChangesAsync();
         }
 
         var activeTokens = await _dbContext.PasswordResetTokens
@@ -85,6 +104,7 @@ public class AuthController : ControllerBase
 
         await _publisher.PublishAsync("usuario.recuperacion", new
         {
+            id = user.Id,
             email,
             token = recoveryToken.Token
         });

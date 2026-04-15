@@ -99,6 +99,9 @@ public class EmpleadoEventsConsumerService : BackgroundService
         var payload = Encoding.UTF8.GetString(args.Body.ToArray());
 
         using var document = JsonDocument.Parse(payload);
+        var empleadoId = document.RootElement.TryGetProperty("id", out var idElement)
+            ? idElement.GetString()?.Trim()
+            : null;
         if (!document.RootElement.TryGetProperty("email", out var emailElement))
         {
             _logger.LogWarning("Evento {RoutingKey} descartado: no contiene email", routingKey);
@@ -160,6 +163,7 @@ public class EmpleadoEventsConsumerService : BackgroundService
 
             await _publisher.PublishAsync("usuario.creado", new
             {
+                id = string.IsNullOrWhiteSpace(empleadoId) ? null : empleadoId,
                 email,
                 token = resetToken.Token
             }, cancellationToken);
