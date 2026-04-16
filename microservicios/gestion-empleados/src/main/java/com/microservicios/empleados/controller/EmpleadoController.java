@@ -15,7 +15,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/empleado")
@@ -129,8 +131,8 @@ public class EmpleadoController {
     )
     @ApiResponses(value = {
             @ApiResponse(
-                    responseCode = "204",
-                    description = "Empleado eliminado exitosamente"
+                    responseCode = "200",
+                    description = "Empleado eliminado exitosamente y notificación publicada"
             ),
             @ApiResponse(
                     responseCode = "404",
@@ -141,7 +143,7 @@ public class EmpleadoController {
                     description = "Error interno del servidor"
             )
     })
-    public ResponseEntity<Void> eliminarEmpleado(
+    public ResponseEntity<Map<String, Object>> eliminarEmpleado(
             @Parameter(
                     name = "id",
                     description = "Número de empleado único (ej: EMP001)",
@@ -151,6 +153,10 @@ public class EmpleadoController {
             @PathVariable String id
     ) {
         empleadoService.eliminarEmpleado(id);
-        return ResponseEntity.noContent().build();
+        Map<String, Object> response = new HashMap<>();
+        response.put("mensaje", "Empleado eliminado exitosamente");
+        response.put("empleadoId", id);
+        response.put("notificacion", "Evento empleado.eliminado publicado en RabbitMQ");
+        return ResponseEntity.ok(response);
     }
 }
