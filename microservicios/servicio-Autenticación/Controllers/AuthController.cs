@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using ServicioAutenticacion.Data;
 using ServicioAutenticacion.Dtos;
 using ServicioAutenticacion.Messaging;
@@ -18,17 +19,20 @@ public class AuthController : ControllerBase
     private readonly IJwtTokenService _jwtTokenService;
     private readonly IRabbitMqPublisher _publisher;
     private readonly IConfiguration _configuration;
+    private readonly ILogger<AuthController> _logger;
 
     public AuthController(
         AuthDbContext dbContext,
         IJwtTokenService jwtTokenService,
         IRabbitMqPublisher publisher,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ILogger<AuthController> logger)
     {
         _dbContext = dbContext;
         _jwtTokenService = jwtTokenService;
         _publisher = publisher;
         _configuration = configuration;
+        _logger = logger;
     }
 
     [HttpPost("login")]
@@ -55,61 +59,67 @@ public class AuthController : ControllerBase
     [HttpPost("recover-password")]
     public async Task<IActionResult> RecoverPassword([FromBody] RecoverPasswordRequest request)
     {
-        var email = request.Email.Trim().ToLowerInvariant();
-        var user = await _dbContext.Users.FirstOrDefaultAsync(x => x.Email == email);
-
-        if (user is null)
+        try
         {
-            // Fallback resiliente: si el alta por evento fallo, permitir crear usuario
-            // en auth al solicitar recuperacion para no bloquear el flujo.
-            user = new User
+            var email = request.Email.Trim().ToLowerInvariant();
+
+            var user = await EnsureRecoverUserAsync(email);
+
+            var activeTokens = await _dbContext.PasswordResetTokens
+                .Where(x => x.UserId == user.Id && !x.IsUsed && x.ExpiresAt > DateTimeOffset.UtcNow)
+                .ToListAsync();
+
+            foreach (var token in activeTokens)
             {
-                Email = email,
-                PasswordHash = string.Empty,
-                Role = "USER",
-                IsActive = true,
-                CreatedAt = DateTimeOffset.UtcNow,
-                UpdatedAt = DateTimeOffset.UtcNow
+                token.IsUsed = true;
+            }
+
+            PasswordResetToken recoveryToken = new PasswordResetToken
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.Id,
+                Token = Guid.NewGuid().ToString(),
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(GetResetTokenExpirationMinutes()),
+                IsUsed = false
             };
 
-            _dbContext.Users.Add(user);
-            await _dbContext.SaveChangesAsync();
+            _dbContext.PasswordResetTokens.Add(recoveryToken);
+            try
+            {
+                await _dbContext.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex) when (IsDuplicateConstraint(ex, "auth_reset_tokens_pkey"))
+            {
+                _dbContext.Entry(recoveryToken).State = EntityState.Detached;
+
+                // With transient retries enabled, an INSERT can succeed server-side and still
+                // throw locally; if the same entity is retried, PostgreSQL reports duplicate PK.
+                var persistedToken = await _dbContext.PasswordResetTokens
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == recoveryToken.Id);
+
+                if (persistedToken is null)
+                {
+                    throw;
+                }
+
+                recoveryToken = persistedToken;
+            }
+
+            await _publisher.PublishAsync("usuario.recuperacion", new
+            {
+                id = user.Id,
+                email,
+                token = recoveryToken.Token
+            });
+
+            return Ok(new { message = "Si el correo existe, se enviaron instrucciones de recuperacion" });
         }
-        else if (!user.IsActive)
+        catch (Exception ex)
         {
-            user.IsActive = true;
-            user.UpdatedAt = DateTimeOffset.UtcNow;
-            await _dbContext.SaveChangesAsync();
+            _logger.LogError(ex, "Error en flujo de recuperacion para {Email}", request.Email);
+            return Ok(new { message = "Si el correo existe, se enviaron instrucciones de recuperacion" });
         }
-
-        var activeTokens = await _dbContext.PasswordResetTokens
-            .Where(x => x.UserId == user.Id && !x.IsUsed && x.ExpiresAt > DateTimeOffset.UtcNow)
-            .ToListAsync();
-
-        foreach (var token in activeTokens)
-        {
-            token.IsUsed = true;
-        }
-
-        var recoveryToken = new PasswordResetToken
-        {
-            UserId = user.Id,
-            Token = Guid.NewGuid().ToString(),
-            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(GetResetTokenExpirationMinutes()),
-            IsUsed = false
-        };
-
-        _dbContext.PasswordResetTokens.Add(recoveryToken);
-        await _dbContext.SaveChangesAsync();
-
-        await _publisher.PublishAsync("usuario.recuperacion", new
-        {
-            id = user.Id,
-            email,
-            token = recoveryToken.Token
-        });
-
-        return Ok(new { message = "Si el correo existe, se enviaron instrucciones de recuperacion" });
     }
 
     [HttpPost("reset-password")]
@@ -182,5 +192,73 @@ public class AuthController : ControllerBase
             ?? _configuration["Auth:ResetTokenExpirationMinutes"];
 
         return int.TryParse(raw, out var minutes) && minutes > 0 ? minutes : 30;
+    }
+
+    private async Task<User> EnsureRecoverUserAsync(string email)
+    {
+        var user = await _dbContext.Users.FirstOrDefaultAsync(x => x.Email == email);
+        if (user is null)
+        {
+            // Fallback resiliente: si el alta por evento fallo, permitir crear usuario
+            // en auth al solicitar recuperacion para no bloquear el flujo.
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                user = new User
+                {
+                    Id = Guid.NewGuid(),
+                    Email = email,
+                    PasswordHash = string.Empty,
+                    Role = "USER",
+                    IsActive = true,
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow
+                };
+
+                _dbContext.Users.Add(user);
+
+                try
+                {
+                    await _dbContext.SaveChangesAsync();
+                    break;
+                }
+                catch (DbUpdateException)
+                {
+                    _dbContext.Entry(user).State = EntityState.Detached;
+
+                    var existingByEmail = await _dbContext.Users.FirstOrDefaultAsync(x => x.Email == email);
+                    if (existingByEmail is not null)
+                    {
+                        user = existingByEmail;
+                        break;
+                    }
+
+                    if (attempt == 2)
+                    {
+                        throw;
+                    }
+                }
+            }
+        }
+
+        if (user is null)
+        {
+            throw new InvalidOperationException("No fue posible resolver el usuario para recuperacion");
+        }
+
+        if (!user.IsActive)
+        {
+            user.IsActive = true;
+            user.UpdatedAt = DateTimeOffset.UtcNow;
+            await _dbContext.SaveChangesAsync();
+        }
+
+        return user;
+    }
+
+    private static bool IsDuplicateConstraint(DbUpdateException ex, string constraintName)
+    {
+        return ex.InnerException is PostgresException pgEx
+            && pgEx.SqlState == PostgresErrorCodes.UniqueViolation
+            && string.Equals(pgEx.ConstraintName, constraintName, StringComparison.OrdinalIgnoreCase);
     }
 }
