@@ -1,6 +1,7 @@
 package com.microservicios.empleados.service;
 
 import com.microservicios.empleados.client.DepartamentoClient;
+import com.microservicios.empleados.dto.EmpleadoUpdateRequest;
 import com.microservicios.empleados.enums.EstadoEmpleado;
 import com.microservicios.empleados.exception.DepartamentoNoValidoException;
 import com.microservicios.empleados.exception.EmpleadoYaExisteException;
@@ -81,6 +82,39 @@ public class EmpleadoService {
     public Empleado obtenerEmpleadoPorId(String id) {
         return empleadoRepository.findById(id)
                 .orElseThrow(() -> new EmpleadoNoEncontradoException("El empleado con id " + id + " no existe"));
+    }
+
+    public Empleado obtenerEmpleadoPorEmail(String email) {
+        return empleadoRepository.findByEmail(email)
+                .orElseThrow(() -> new EmpleadoNoEncontradoException("El empleado con email " + email + " no existe"));
+    }
+
+    @Transactional
+    public Empleado actualizarEmpleado(String id, EmpleadoUpdateRequest request) {
+        Empleado existente = obtenerEmpleadoPorId(id);
+
+        String nuevoEmail = request.getEmail().trim();
+        if (!existente.getEmail().equalsIgnoreCase(nuevoEmail) && empleadoRepository.existsByEmail(nuevoEmail)) {
+            throw new EmpleadoYaExisteException("El email " + nuevoEmail + " ya está registrado");
+        }
+
+        String nuevoDepartamentoId = request.getDepartamentoId().trim();
+        if (!departamentoClient.existeDepartamento(nuevoDepartamentoId)) {
+            throw new DepartamentoNoValidoException(
+                    "El departamento con id '" + nuevoDepartamentoId + "' no existe o no está activo"
+            );
+        }
+
+        existente.setEmail(nuevoEmail);
+        existente.setNombre(request.getNombre().trim());
+        existente.setApellido(request.getApellido().trim());
+        existente.setCargo(request.getCargo().trim());
+        existente.setArea(request.getArea().trim());
+        existente.setDepartamentoId(nuevoDepartamentoId);
+        existente.setFechaIngreso(request.getFechaIngreso());
+        existente.setEstado(request.getEstado() == null ? existente.getEstado() : request.getEstado());
+
+        return empleadoRepository.save(existente);
     }
 
     private void publicarEventoEmpleadoCreado(Empleado empleado) {
