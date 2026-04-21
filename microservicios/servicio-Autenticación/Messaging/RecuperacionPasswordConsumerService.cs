@@ -8,18 +8,18 @@ using ServicioAutenticacion.Models;
 
 namespace ServicioAutenticacion.Messaging;
 
-public class EmpleadoEventsConsumerService : BackgroundService
+public class RecuperacionPasswordConsumerService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IRabbitMqPublisher _publisher;
     private readonly IConfiguration _configuration;
-    private readonly ILogger<EmpleadoEventsConsumerService> _logger;
+    private readonly ILogger<RecuperacionPasswordConsumerService> _logger;
 
-    public EmpleadoEventsConsumerService(
+    public RecuperacionPasswordConsumerService(
         IServiceScopeFactory scopeFactory,
         IRabbitMqPublisher publisher,
         IConfiguration configuration,
-        ILogger<EmpleadoEventsConsumerService> logger)
+        ILogger<RecuperacionPasswordConsumerService> logger)
     {
         _scopeFactory = scopeFactory;
         _publisher = publisher;
@@ -45,17 +45,16 @@ public class EmpleadoEventsConsumerService : BackgroundService
                     ?? _configuration["RabbitMQ:Exchange"]
                     ?? "empleados.events";
 
-                var queue = Environment.GetEnvironmentVariable("AUTH_QUEUE")
-                    ?? _configuration["RabbitMQ:Queue"]
-                    ?? "auth.queue";
+                var queue = Environment.GetEnvironmentVariable("RECOVERY_QUEUE")
+                    ?? _configuration["RabbitMQ:RecoveryQueue"]
+                    ?? "auth.recovery-password.queue";
 
                 using var connection = factory.CreateConnection();
                 using var channel = connection.CreateModel();
 
                 channel.ExchangeDeclare(exchange: exchange, type: ExchangeType.Topic, durable: true, autoDelete: false);
                 channel.QueueDeclare(queue: queue, durable: true, exclusive: false, autoDelete: false);
-                channel.QueueBind(queue: queue, exchange: exchange, routingKey: "empleado.creado");
-                channel.QueueBind(queue: queue, exchange: exchange, routingKey: "empleado.eliminado");
+                channel.QueueBind(queue: queue, exchange: exchange, routingKey: "solicitud.recuperacion-password");
                 channel.BasicQos(0, 1, false);
 
                 var consumer = new EventingBasicConsumer(channel);
@@ -69,7 +68,7 @@ public class EmpleadoEventsConsumerService : BackgroundService
                     catch (Exception ex)
                     {
                         var shouldRequeue = IsTransient(ex);
-                        _logger.LogError(ex, "Error procesando mensaje {RoutingKey}", args.RoutingKey);
+                        _logger.LogError(ex, "Error procesando mensaje de recuperación de contraseña {RoutingKey}", args.RoutingKey);
                         channel.BasicNack(args.DeliveryTag, false, shouldRequeue);
                     }
                 };
@@ -87,7 +86,7 @@ public class EmpleadoEventsConsumerService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error en consumidor de eventos de empleados. Reintentando en 5 segundos.");
+                _logger.LogError(ex, "Error en consumidor de recuperación de contraseña. Reintentando en 5 segundos.");
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
         }
@@ -98,10 +97,10 @@ public class EmpleadoEventsConsumerService : BackgroundService
         var routingKey = args.RoutingKey;
         var payload = Encoding.UTF8.GetString(args.Body.ToArray());
 
+        _logger.LogInformation("Processing recovery password event: {Payload}", payload);
+
         using var document = JsonDocument.Parse(payload);
-        var empleadoId = document.RootElement.TryGetProperty("id", out var idElement)
-            ? idElement.GetString()?.Trim()
-            : null;
+        
         if (!document.RootElement.TryGetProperty("email", out var emailElement))
         {
             _logger.LogWarning("Evento {RoutingKey} descartado: no contiene email", routingKey);
@@ -118,110 +117,80 @@ public class EmpleadoEventsConsumerService : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
 
-        if (routingKey == "empleado.creado")
+        // Get or create user
+        var user = await db.Users.FirstOrDefaultAsync(x => x.Email == email, cancellationToken);
+        if (user is null)
         {
-            var user = await db.Users.FirstOrDefaultAsync(x => x.Email == email, cancellationToken);
-            if (user is null)
+            user = new User
             {
-                user = new User
-                {
-                    Email = email,
-                    PasswordHash = string.Empty,
-                    Role = "USER",
-                    IsActive = true,
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    UpdatedAt = DateTimeOffset.UtcNow
-                };
-                db.Users.Add(user);
-            }
-            else
-            {
-                user.IsActive = true;
-                user.Role = "USER";
-                user.UpdatedAt = DateTimeOffset.UtcNow;
-            }
-
-            var activeTokens = await db.PasswordResetTokens
-                .Where(x => x.UserId == user.Id && !x.IsUsed && x.ExpiresAt > DateTimeOffset.UtcNow)
-                .ToListAsync(cancellationToken);
-
-            foreach (var token in activeTokens)
-            {
-                token.IsUsed = true;
-            }
-
-            var resetToken = new PasswordResetToken
-            {
-                UserId = user.Id,
-                Token = Guid.NewGuid().ToString(),
-                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(GetResetTokenExpirationMinutes()),
-                IsUsed = false
+                Id = Guid.NewGuid(),
+                Email = email,
+                PasswordHash = string.Empty,
+                Role = "USER",
+                IsActive = true,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
             };
-
-            db.PasswordResetTokens.Add(resetToken);
-            await db.SaveChangesAsync(cancellationToken);
-
-            await _publisher.PublishAsync("usuario.creado", new
+            db.Users.Add(user);
+            try
             {
-                id = string.IsNullOrWhiteSpace(empleadoId) ? null : empleadoId,
-                email,
-                token = resetToken.Token
-            }, cancellationToken);
-
-            _logger.LogInformation("Usuario creado/actualizado por evento empleado.creado: {Email}", email);
-            return;
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch
+            {
+                // If creation fails, try to reload existing user
+                user = await db.Users.FirstOrDefaultAsync(x => x.Email == email, cancellationToken);
+                if (user == null) throw;
+            }
         }
 
-        if (routingKey == "empleado.eliminado")
+        // Mark other active tokens as used
+        var activeTokens = await db.PasswordResetTokens
+            .Where(x => x.UserId == user.Id && !x.IsUsed && x.ExpiresAt > DateTimeOffset.UtcNow)
+            .ToListAsync(cancellationToken);
+
+        foreach (var token in activeTokens)
         {
-            var user = await db.Users.FirstOrDefaultAsync(x => x.Email == email, cancellationToken);
-            if (user is null)
-            {
-                return;
-            }
-
-            user.IsActive = false;
-            user.UpdatedAt = DateTimeOffset.UtcNow;
-
-            var activeTokens = await db.PasswordResetTokens
-                .Where(x => x.UserId == user.Id && !x.IsUsed)
-                .ToListAsync(cancellationToken);
-
-            foreach (var token in activeTokens)
-            {
-                token.IsUsed = true;
-            }
-
-            await db.SaveChangesAsync(cancellationToken);
-            _logger.LogInformation("Usuario inhabilitado por evento empleado.eliminado: {Email}", email);
+            token.IsUsed = true;
         }
+
+        // Create new reset token
+        var recoveryToken = new PasswordResetToken
+        {
+            UserId = user.Id,
+            Token = Guid.NewGuid().ToString(),
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30),
+            IsUsed = false
+        };
+
+        db.PasswordResetTokens.Add(recoveryToken);
+        await db.SaveChangesAsync(cancellationToken);
+
+        // Publish usuario.recuperacion event to trigger SEGURIDAD notification
+        await _publisher.PublishAsync("usuario.recuperacion", new
+        {
+            id = user.Id,
+            email = email,
+            token = recoveryToken.Token
+        });
+
+        _logger.LogInformation("Password recovery token created for {Email}", email);
     }
 
-    private int GetResetTokenExpirationMinutes()
+    private static int ParseInt(string? value, int defaultValue = 0)
     {
-        var raw = Environment.GetEnvironmentVariable("RESET_TOKEN_EXPIRATION_MINUTES")
-            ?? _configuration["Auth:ResetTokenExpirationMinutes"];
-
-        return int.TryParse(raw, out var minutes) && minutes > 0 ? minutes : 30;
-    }
-
-    private static int ParseInt(string? rawValue, int defaultValue)
-    {
-        return int.TryParse(rawValue, out var parsed) ? parsed : defaultValue;
+        return !string.IsNullOrWhiteSpace(value) && int.TryParse(value, out var result)
+            ? result
+            : defaultValue;
     }
 
     private static bool IsTransient(Exception ex)
     {
-        if (ex is TimeoutException)
+        return ex switch
         {
-            return true;
-        }
-
-        if (ex.InnerException is not null)
-        {
-            return IsTransient(ex.InnerException);
-        }
-
-        return false;
+            TimeoutException => true,
+            InvalidOperationException => ex.Message.Contains("connection"),
+            _ => false
+        };
     }
 }

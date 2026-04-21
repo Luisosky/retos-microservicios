@@ -10,6 +10,8 @@ use RuntimeException;
 
 class PerfilService
 {
+    private const DEPARTAMENTO_RRHH = 'DEP001';
+
     /**
      * Obtener todos los perfiles (paginado).
      */
@@ -89,11 +91,20 @@ class PerfilService
         ];
         $statusError = null;
         $rawEmpleado = null;
+        $authorizationHeader = request()?->header('Authorization');
 
         foreach ($rutasConsulta as $ruta) {
             try {
-                $response = Http::timeout(5)
-                    ->acceptJson()
+                $httpRequest = Http::timeout(5)
+                    ->acceptJson();
+
+                if (is_string($authorizationHeader) && trim($authorizationHeader) !== '') {
+                    $httpRequest = $httpRequest->withHeaders([
+                        'Authorization' => $authorizationHeader,
+                    ]);
+                }
+
+                $response = $httpRequest
                     ->get("{$baseUrl}{$ruta}");
             } catch (ConnectionException $e) {
                 throw new RuntimeException('No fue posible conectar con el servicio de empleados.', 0, $e);
@@ -134,6 +145,98 @@ class PerfilService
         return $empleado;
     }
 
+    /**
+     * Consulta el servicio de empleados y busca un empleado por email.
+     *
+     * @throws RuntimeException Si el servicio de empleados no responde correctamente.
+     */
+    public function obtenerEmpleadoPorEmailDesdeServicio(string $email): ?array
+    {
+        $emailLimpio = trim($email);
+        if ($emailLimpio === '') {
+            return null;
+        }
+
+        $baseUrl = rtrim((string) config('microservices.empleados_url'), '/');
+        $rutasConsulta = [
+            '/empleado/email/'.rawurlencode($emailLimpio),
+            '/empleados/email/'.rawurlencode($emailLimpio),
+        ];
+        $statusError = null;
+        $rawEmpleado = null;
+        $authorizationHeader = request()?->header('Authorization');
+
+        foreach ($rutasConsulta as $ruta) {
+            try {
+                $httpRequest = Http::timeout(5)
+                    ->acceptJson();
+
+                if (is_string($authorizationHeader) && trim($authorizationHeader) !== '') {
+                    $httpRequest = $httpRequest->withHeaders([
+                        'Authorization' => $authorizationHeader,
+                    ]);
+                }
+
+                $response = $httpRequest->get("{$baseUrl}{$ruta}");
+            } catch (ConnectionException $e) {
+                throw new RuntimeException('No fue posible conectar con el servicio de empleados.', 0, $e);
+            }
+
+            if ($response->status() === 404) {
+                continue;
+            }
+
+            if (!$response->successful()) {
+                $statusError = $response->status();
+                continue;
+            }
+
+            $rawEmpleado = $response->json();
+            break;
+        }
+
+        if ($rawEmpleado === null) {
+            if ($statusError === null) {
+                return null;
+            }
+
+            throw new RuntimeException('El servicio de empleados respondió con error.');
+        }
+
+        $empleado = $this->normalizarEmpleado($rawEmpleado);
+
+        if ($empleado === null || empty($empleado['id']) || empty($empleado['nombre']) || empty($empleado['email'])) {
+            throw new RuntimeException('Respuesta inválida del servicio de empleados.');
+        }
+
+        return $empleado;
+    }
+
+    /**
+     * Resuelve si el usuario autenticado tiene acceso total (DEP001) o solo acceso propio.
+     */
+    public function resolverContextoAcceso(string $emailAutenticado): array
+    {
+        $emailNormalizado = strtolower(trim($emailAutenticado));
+        if ($emailNormalizado === '') {
+            throw new RuntimeException('No se pudo identificar al usuario autenticado.');
+        }
+
+        $empleado = $this->obtenerEmpleadoPorEmailDesdeServicio($emailNormalizado);
+
+        if ($empleado === null) {
+            throw new RuntimeException('No se encontró un empleado asociado al usuario autenticado.');
+        }
+
+        $departamento = strtoupper(trim((string) ($empleado['departamentoId'] ?? '')));
+
+        return [
+            'email' => $emailNormalizado,
+            'empleadoId' => (string) ($empleado['id'] ?? ''),
+            'esRecursosHumanos' => $departamento === self::DEPARTAMENTO_RRHH,
+        ];
+    }
+
     private function normalizarEmpleado(mixed $payload): ?array
     {
         if (!is_array($payload)) {
@@ -168,10 +271,14 @@ class PerfilService
             return null;
         }
 
+        $departamentoRaw = $payload['departamentoId'] ?? $payload['departamento_id'] ?? null;
+        $departamentoId = is_scalar($departamentoRaw) ? trim((string) $departamentoRaw) : '';
+
         return [
             'id' => $id,
             'nombre' => $nombre,
             'email' => $email,
+            'departamentoId' => $departamentoId,
         ];
     }
 

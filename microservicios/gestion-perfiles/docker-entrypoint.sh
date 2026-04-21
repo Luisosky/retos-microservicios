@@ -46,6 +46,20 @@ set_env_var "REDIS_PASSWORD" "${REDIS_PASSWORD:-}"
 
 set_env_var "APP_KEY" "${APP_KEY}"
 
+# JWT Configuration
+set_env_var "JWT_SECRET" "${JWT_SECRET}"
+set_env_var "JWT_ISSUER" "${JWT_ISSUER:-auth-service}"
+set_env_var "JWT_AUDIENCE" "${JWT_AUDIENCE:-microservices-clients}"
+
+# RabbitMQ Configuration
+set_env_var "RABBITMQ_HOST" "${RABBITMQ_HOST:-rabbitmq-broker}"
+set_env_var "RABBITMQ_PORT" "${RABBITMQ_PORT:-5672}"
+set_env_var "RABBITMQ_USER" "${RABBITMQ_USER:-guest}"
+set_env_var "RABBITMQ_PASS" "${RABBITMQ_PASS:-guest}"
+
+# Microservices URLs
+set_env_var "EMPLEADOS_SERVICE_URL" "${EMPLEADOS_SERVICE_URL:-http://empleados-service:8080}"
+
 set_env_var "DB_CONNECTION" "pgsql"
 if [ -n "$DATABASE_URL" ]; then
   set_env_var "DATABASE_URL" "$DATABASE_URL"

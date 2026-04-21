@@ -46,6 +46,9 @@ class ValidateJwtToken
             if (empty($decoded['sub'])) {
                 return new JsonResponse(['message' => 'Invalid token subject'], 401);
             }
+
+            $request->attributes->set('jwt.sub', (string) $decoded['sub']);
+            $request->attributes->set('jwt.role', (string) ($decoded['role'] ?? ''));
         } catch (Throwable $ex) {
             return new JsonResponse(['message' => 'Invalid token: '.$ex->getMessage()], 401);
         }

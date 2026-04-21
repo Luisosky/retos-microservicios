@@ -16,6 +16,7 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 builder.Services.AddSingleton<IRabbitMqPublisher, RabbitMqPublisher>();
 builder.Services.AddHostedService<EmpleadoEventsConsumerService>();
+builder.Services.AddHostedService<RecuperacionPasswordConsumerService>();
 
 var authDatabaseUrl = Environment.GetEnvironmentVariable("AUTH_DATABASE_URL")
     ?? Environment.GetEnvironmentVariable("DEP_DATABASE_URL")

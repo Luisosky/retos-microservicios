@@ -20,6 +20,15 @@ class PerfilController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        $contexto = $this->resolverContextoAccesoConManejo($request);
+        if ($contexto instanceof JsonResponse) {
+            return $contexto;
+        }
+
+        if (!$contexto['esRecursosHumanos']) {
+            return response()->json(['message' => 'No tienes permisos para esta operación.'], 403);
+        }
+
         $perPage = (int) $request->query('per_page', 15);
         $perfiles = $this->perfilService->listar($perPage);
         $payload = $perfiles->toArray();
@@ -35,6 +44,15 @@ class PerfilController extends Controller
      */
     public function store(StorePerfilRequest $request): JsonResponse
     {
+        $contexto = $this->resolverContextoAccesoConManejo($request);
+        if ($contexto instanceof JsonResponse) {
+            return $contexto;
+        }
+
+        if (!$contexto['esRecursosHumanos']) {
+            return response()->json(['message' => 'No tienes permisos para esta operación.'], 403);
+        }
+
         $datos = $request->validated();
         $empleadoId = trim((string) ($datos['empleadoId'] ?? ''));
 
@@ -66,12 +84,24 @@ class PerfilController extends Controller
      * GET /api/perfiles/{id}
      * Obtener un perfil por su ID.
      */
-    public function show(string $id): JsonResponse
+    public function show(Request $request, string $id): JsonResponse
     {
+        $contexto = $this->resolverContextoAccesoConManejo($request);
+        if ($contexto instanceof JsonResponse) {
+            return $contexto;
+        }
+
         $perfil = $this->perfilService->encontrar($id);
 
         if (!$perfil) {
             return response()->json(['message' => 'Perfil no encontrado.'], 404);
+        }
+
+        if (!$contexto['esRecursosHumanos']) {
+            $empleadoIdPerfil = trim((string) $perfil->empleado_id);
+            if ($empleadoIdPerfil !== (string) $contexto['empleadoId']) {
+                return response()->json(['message' => 'Solo puedes acceder a tu propio perfil.'], 403);
+            }
         }
 
         return response()->json($this->serializarPerfil($perfil));
@@ -81,10 +111,19 @@ class PerfilController extends Controller
      * GET /api/perfiles/{empleadoId}
      * Obtener un perfil por el ID del empleado.
      */
-    public function showByEmpleado(string $empleadoId): JsonResponse
+    public function showByEmpleado(Request $request, string $empleadoId): JsonResponse
     {
+        $contexto = $this->resolverContextoAccesoConManejo($request);
+        if ($contexto instanceof JsonResponse) {
+            return $contexto;
+        }
+
         if (empty(trim($empleadoId))) {
             return response()->json(['message' => 'El ID de empleado no puede estar vacío.'], 400);
+        }
+
+        if (!$contexto['esRecursosHumanos'] && trim($empleadoId) !== (string) $contexto['empleadoId']) {
+            return response()->json(['message' => 'Solo puedes acceder a tu propio perfil.'], 403);
         }
 
         $perfil = $this->perfilService->encontrarPorEmpleadoId($empleadoId);
@@ -102,8 +141,17 @@ class PerfilController extends Controller
      */
     public function updateByEmpleado(UpdatePerfilRequest $request, string $empleadoId): JsonResponse
     {
+        $contexto = $this->resolverContextoAccesoConManejo($request);
+        if ($contexto instanceof JsonResponse) {
+            return $contexto;
+        }
+
         if (empty(trim($empleadoId))) {
             return response()->json(['message' => 'El ID de empleado no puede estar vacío.'], 400);
+        }
+
+        if (!$contexto['esRecursosHumanos'] && trim($empleadoId) !== (string) $contexto['empleadoId']) {
+            return response()->json(['message' => 'Solo puedes actualizar tu propio perfil.'], 403);
         }
 
         $perfil = $this->perfilService->encontrarPorEmpleadoId($empleadoId);
@@ -131,8 +179,17 @@ class PerfilController extends Controller
      * DELETE /api/perfiles/{id}
      * Eliminar (soft delete) un perfil.
      */
-    public function destroy(string $id): JsonResponse
+    public function destroy(Request $request, string $id): JsonResponse
     {
+        $contexto = $this->resolverContextoAccesoConManejo($request);
+        if ($contexto instanceof JsonResponse) {
+            return $contexto;
+        }
+
+        if (!$contexto['esRecursosHumanos']) {
+            return response()->json(['message' => 'No tienes permisos para esta operación.'], 403);
+        }
+
         $perfil = $this->perfilService->encontrar($id);
 
         if (!$perfil) {
@@ -151,8 +208,17 @@ class PerfilController extends Controller
      * DELETE /api/perfiles/{empleadoId}
      * Eliminar (soft delete) un perfil por ID de empleado.
      */
-    public function destroyByEmpleado(string $empleadoId): JsonResponse
+    public function destroyByEmpleado(Request $request, string $empleadoId): JsonResponse
     {
+        $contexto = $this->resolverContextoAccesoConManejo($request);
+        if ($contexto instanceof JsonResponse) {
+            return $contexto;
+        }
+
+        if (!$contexto['esRecursosHumanos']) {
+            return response()->json(['message' => 'No tienes permisos para esta operación.'], 403);
+        }
+
         if (empty(trim($empleadoId))) {
             return response()->json(['message' => 'El ID de empleado no puede estar vacío.'], 400);
         }
@@ -186,6 +252,28 @@ class PerfilController extends Controller
     private function serializarPerfil(Perfil $perfil): array
     {
         return $this->serializarPerfilArray($perfil->toArray());
+    }
+
+    private function resolverContextoAccesoConManejo(Request $request): array|JsonResponse
+    {
+        try {
+            return $this->perfilService->resolverContextoAcceso((string) $request->attributes->get('jwt.sub', ''));
+        } catch (RuntimeException $e) {
+            $mensaje = $e->getMessage();
+
+            if ($this->esErrorDependencia($mensaje)) {
+                return response()->json(['message' => $mensaje], 503);
+            }
+
+            return response()->json(['message' => $mensaje], 403);
+        }
+    }
+
+    private function esErrorDependencia(string $mensaje): bool
+    {
+        return str_contains($mensaje, 'No fue posible conectar con el servicio de empleados')
+            || str_contains($mensaje, 'El servicio de empleados respondió con error')
+            || str_contains($mensaje, 'Respuesta inválida del servicio de empleados');
     }
 
     private function serializarPerfilArray(array $perfil): array

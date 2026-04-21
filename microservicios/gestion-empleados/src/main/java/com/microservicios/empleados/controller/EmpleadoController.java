@@ -1,6 +1,8 @@
 package com.microservicios.empleados.controller;
 
+import com.microservicios.empleados.dto.EmpleadoUpdateRequest;
 import com.microservicios.empleados.model.Empleado;
+import com.microservicios.empleados.service.AutorizacionEmpleadoService;
 import com.microservicios.empleados.service.EmpleadoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -15,7 +17,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/empleado")
@@ -23,6 +27,7 @@ import java.util.List;
 @Tag(name = "Empleados", description = "API para gestión de empleados")
 public class EmpleadoController {
     private final EmpleadoService empleadoService;
+        private final AutorizacionEmpleadoService autorizacionEmpleadoService;
 
     @PostMapping
     @Operation(
@@ -58,6 +63,7 @@ public class EmpleadoController {
     public ResponseEntity<Empleado> registrarEmpleado(
             @Valid @RequestBody Empleado empleado
     ) {
+                autorizacionEmpleadoService.asegurarAccesoTotal();
         Empleado empleadoCreado = empleadoService.crearEmpleado(empleado);
         return ResponseEntity.status(HttpStatus.CREATED).body(empleadoCreado);
     }
@@ -82,6 +88,7 @@ public class EmpleadoController {
             )
     })
     public ResponseEntity<List<Empleado>> listarEmpleados() {
+                autorizacionEmpleadoService.asegurarAccesoTotal();
         List<Empleado> empleados = empleadoService.obtenerTodosEmpleados();
         return ResponseEntity.status(HttpStatus.OK).body(empleados);
     }
@@ -118,8 +125,50 @@ public class EmpleadoController {
             )
             @PathVariable String id
     ) {
+        autorizacionEmpleadoService.asegurarAccesoPropioORecursosHumanosPorEmpleadoId(id);
         Empleado empleado = empleadoService.obtenerEmpleadoPorId(id);
         return ResponseEntity.status(HttpStatus.OK).body(empleado);
+    }
+
+    @GetMapping("/email/{email:.+}")
+    @Operation(
+            summary = "Obtener empleado por email",
+            description = "Obtiene los detalles de un empleado usando su correo electrónico como identificador."
+    )
+    public ResponseEntity<Empleado> consultarEmpleadoPorEmail(
+            @PathVariable String email
+    ) {
+        autorizacionEmpleadoService.asegurarAccesoPropioORecursosHumanosPorEmail(email);
+        Empleado empleado = empleadoService.obtenerEmpleadoPorEmail(email);
+        return ResponseEntity.status(HttpStatus.OK).body(empleado);
+    }
+
+    @PutMapping("/{id}")
+    @Operation(
+            summary = "Actualizar empleado por ID",
+            description = "Actualiza la información de un empleado por su número de empleado."
+    )
+    public ResponseEntity<Empleado> actualizarEmpleado(
+            @PathVariable String id,
+            @Valid @RequestBody EmpleadoUpdateRequest request
+    ) {
+        autorizacionEmpleadoService.asegurarAccesoPropioORecursosHumanosPorEmpleadoId(id);
+        Empleado actualizado = empleadoService.actualizarEmpleado(id, request);
+        return ResponseEntity.status(HttpStatus.OK).body(actualizado);
+    }
+
+    @PatchMapping("/{id}")
+    @Operation(
+            summary = "Actualizar parcialmente empleado por ID",
+            description = "Alias de actualización para compatibilidad con clientes que usan PATCH."
+    )
+    public ResponseEntity<Empleado> actualizarEmpleadoParcial(
+            @PathVariable String id,
+            @Valid @RequestBody EmpleadoUpdateRequest request
+    ) {
+        autorizacionEmpleadoService.asegurarAccesoPropioORecursosHumanosPorEmpleadoId(id);
+        Empleado actualizado = empleadoService.actualizarEmpleado(id, request);
+        return ResponseEntity.status(HttpStatus.OK).body(actualizado);
     }
 
     @DeleteMapping("/{id}")
@@ -129,8 +178,8 @@ public class EmpleadoController {
     )
     @ApiResponses(value = {
             @ApiResponse(
-                    responseCode = "204",
-                    description = "Empleado eliminado exitosamente"
+                    responseCode = "200",
+                    description = "Empleado eliminado exitosamente y notificación publicada"
             ),
             @ApiResponse(
                     responseCode = "404",
@@ -141,7 +190,7 @@ public class EmpleadoController {
                     description = "Error interno del servidor"
             )
     })
-    public ResponseEntity<Void> eliminarEmpleado(
+    public ResponseEntity<Map<String, Object>> eliminarEmpleado(
             @Parameter(
                     name = "id",
                     description = "Número de empleado único (ej: EMP001)",
@@ -150,7 +199,12 @@ public class EmpleadoController {
             )
             @PathVariable String id
     ) {
+                autorizacionEmpleadoService.asegurarAccesoTotal();
         empleadoService.eliminarEmpleado(id);
-        return ResponseEntity.noContent().build();
+        Map<String, Object> response = new HashMap<>();
+        response.put("mensaje", "Empleado eliminado exitosamente");
+        response.put("empleadoId", id);
+        response.put("notificacion", "Evento empleado.eliminado publicado en RabbitMQ");
+        return ResponseEntity.ok(response);
     }
 }
