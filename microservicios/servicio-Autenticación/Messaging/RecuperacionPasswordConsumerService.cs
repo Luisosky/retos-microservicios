@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using ServicioAutenticacion.Data;
@@ -154,25 +155,86 @@ public class RecuperacionPasswordConsumerService : BackgroundService
             token.IsUsed = true;
         }
 
-        // Create new reset token
-        var recoveryToken = new PasswordResetToken
-        {
-            UserId = user.Id,
-            Token = Guid.NewGuid().ToString(),
-            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30),
-            IsUsed = false
-        };
+        // Create new reset token with retry on rare GUID collision
+        PasswordResetToken? persistedRecoveryToken = null;
+        const int maxInsertAttempts = 3;
+            for (var attempt = 0; attempt < maxInsertAttempts; attempt++)
+            {
+                var tokenToInsert = new PasswordResetToken
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = user.Id,
+                    Token = Guid.NewGuid().ToString(),
+                    ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(30),
+                    IsUsed = false
+                };
 
-        db.PasswordResetTokens.Add(recoveryToken);
-        await db.SaveChangesAsync(cancellationToken);
+                db.PasswordResetTokens.Add(tokenToInsert);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    await db.SaveChangesAsync(cancellationToken);
+                    sw.Stop();
+                    _logger.LogDebug("Saved PasswordResetToken (attempt {Attempt}) in {Elapsed}ms", attempt + 1, sw.ElapsedMilliseconds);
+                    persistedRecoveryToken = tokenToInsert;
+                    break;
+                }
+                catch (DbUpdateException ex) when (IsDuplicateConstraint(ex, "auth_reset_tokens_pkey"))
+                {
+                    sw.Stop();
+                    _logger.LogWarning(ex, "Duplicate key on PasswordResetToken insert (attempt {Attempt}). Checking for persisted token.", attempt + 1);
+                    db.Entry(tokenToInsert).State = EntityState.Detached;
 
-        // Publish usuario.recuperacion event to trigger SEGURIDAD notification
-        await _publisher.PublishAsync("usuario.recuperacion", new
+                    var persisted = await db.PasswordResetTokens.AsNoTracking()
+                        .FirstOrDefaultAsync(x => x.Token == tokenToInsert.Token, cancellationToken);
+                    if (persisted is not null)
+                    {
+                        persistedRecoveryToken = persisted;
+                        break;
+                    }
+
+                    if (attempt == maxInsertAttempts - 1)
+                    {
+                        throw;
+                    }
+
+                    await Task.Delay(50, cancellationToken);
+                    continue;
+                }
+                catch (DbUpdateException ex) when (ex.InnerException is Npgsql.NpgsqlException pg && pg.SqlState == "23505")
+                {
+                    sw.Stop();
+                    _logger.LogWarning(ex, "Duplicate key on PasswordResetToken insert (attempt {Attempt}). Checking for persisted token.", attempt + 1);
+                    db.Entry(tokenToInsert).State = EntityState.Detached;
+
+                    var persisted = await db.PasswordResetTokens.AsNoTracking()
+                        .FirstOrDefaultAsync(x => x.Token == tokenToInsert.Token, cancellationToken);
+                    if (persisted is not null)
+                    {
+                        persistedRecoveryToken = persisted;
+                        break;
+                    }
+
+                    if (attempt == maxInsertAttempts - 1)
+                    {
+                        throw;
+                    }
+
+                    await Task.Delay(50, cancellationToken);
+                    continue;
+                }
+            }
+
+        // Publish usuario.recuperacion event asynchronously (fire-and-forget)
+        if (persistedRecoveryToken is not null)
         {
-            id = user.Id,
-            email = email,
-            token = recoveryToken.Token
-        });
+            await _publisher.PublishAsync("usuario.recuperacion", new
+            {
+                id = user.Id,
+                email = email,
+                token = persistedRecoveryToken.Token
+            }, CancellationToken.None, fireAndForget: true);
+        }
 
         _logger.LogInformation("Password recovery token created for {Email}", email);
     }
@@ -192,5 +254,12 @@ public class RecuperacionPasswordConsumerService : BackgroundService
             InvalidOperationException => ex.Message.Contains("connection"),
             _ => false
         };
+    }
+
+    private static bool IsDuplicateConstraint(DbUpdateException ex, string constraintName)
+    {
+        return ex.InnerException is PostgresException pgEx
+            && pgEx.SqlState == PostgresErrorCodes.UniqueViolation
+            && string.Equals(pgEx.ConstraintName, constraintName, StringComparison.OrdinalIgnoreCase);
     }
 }

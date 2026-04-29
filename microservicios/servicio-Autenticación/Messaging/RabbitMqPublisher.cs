@@ -1,5 +1,8 @@
 using System.Text;
 using System.Text.Json;
+using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 using RabbitMQ.Client;
 
 namespace ServicioAutenticacion.Messaging;
@@ -48,12 +51,53 @@ public sealed class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
             ?? "empleados.events";
     }
 
-    public Task PublishAsync(string routingKey, object payload, CancellationToken cancellationToken = default)
+    public Task PublishAsync(string routingKey, object payload, CancellationToken cancellationToken = default, bool fireAndForget = false)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Publish timeout in milliseconds (configurable)
+        var publishTimeoutMs = ParseInt(Environment.GetEnvironmentVariable("RABBITMQ_PUBLISH_TIMEOUT_MS") ?? _configuration["RabbitMQ:PublishTimeoutMs"], 2000);
+
+        if (fireAndForget)
+        {
+            // Fire-and-forget: schedule a background task that will attempt publish with a timeout
+            _ = Task.Run(async () =>
+            {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cts.CancelAfter(publishTimeoutMs);
+                var sw = Stopwatch.StartNew();
+                try
+                {
+                    await DoPublishAsync(routingKey, payload, cts.Token).ConfigureAwait(false);
+                    sw.Stop();
+                    _logger.LogDebug("Publish (fire-and-forget) {RoutingKey} took {Elapsed}ms", routingKey, sw.ElapsedMilliseconds);
+                }
+                catch (OperationCanceledException)
+                {
+                    _logger.LogWarning("Publish (fire-and-forget) cancelled/timeout for {RoutingKey} after {Timeout}ms", routingKey, publishTimeoutMs);
+                    InvalidateConnection();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Publish (fire-and-forget) failed for {RoutingKey}", routingKey);
+                    InvalidateConnection();
+                }
+            }, cancellationToken);
+
+            return Task.CompletedTask;
+        }
+
+        // Synchronous publish (caller awaits)
+        return DoPublishAsync(routingKey, payload, cancellationToken);
+    }
+
+    private Task DoPublishAsync(string routingKey, object payload, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         try
         {
+            var sw = Stopwatch.StartNew();
             var connection = GetOrCreateConnection();
             using var channel = connection.CreateModel();
 
@@ -69,6 +113,9 @@ public sealed class RabbitMqPublisher : IRabbitMqPublisher, IDisposable
                 basicProperties: properties,
                 body: body
             );
+
+            sw.Stop();
+            _logger.LogDebug("Publish {RoutingKey} took {Elapsed}ms", routingKey, sw.ElapsedMilliseconds);
         }
         catch (Exception ex)
         {

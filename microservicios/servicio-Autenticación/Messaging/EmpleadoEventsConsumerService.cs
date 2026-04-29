@@ -163,42 +163,87 @@ public class EmpleadoEventsConsumerService : BackgroundService
                 .Where(x => x.UserId == user.Id && !x.IsUsed && x.ExpiresAt > DateTimeOffset.UtcNow)
                 .ExecuteUpdateAsync(setters => setters.SetProperty(t => t.IsUsed, true), cancellationToken);
 
-            PasswordResetToken resetToken = new PasswordResetToken
+            PasswordResetToken? persistedResetToken = null;
+            const int maxInsertAttempts = 3;
+            for (var attempt = 0; attempt < maxInsertAttempts; attempt++)
             {
-                Id = Guid.NewGuid(),
-                UserId = user.Id,
-                Token = Guid.NewGuid().ToString(),
-                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(GetResetTokenExpirationMinutes()),
-                IsUsed = false
-            };
-
-            db.PasswordResetTokens.Add(resetToken);
-            try
-            {
-                await db.SaveChangesAsync(cancellationToken);
-            }
-            catch (DbUpdateException ex) when (IsDuplicateConstraint(ex, "auth_reset_tokens_pkey"))
-            {
-                db.Entry(resetToken).State = EntityState.Detached;
-
-                var persistedToken = await db.PasswordResetTokens
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.Id == resetToken.Id, cancellationToken);
-
-                if (persistedToken is null)
+                var tokenToInsert = new PasswordResetToken
                 {
-                    throw;
-                }
+                    Id = Guid.NewGuid(),
+                    UserId = user.Id,
+                    Token = Guid.NewGuid().ToString(),
+                    ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(GetResetTokenExpirationMinutes()),
+                    IsUsed = false
+                };
 
-                resetToken = persistedToken;
+                db.PasswordResetTokens.Add(tokenToInsert);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    await db.SaveChangesAsync(cancellationToken);
+                    sw.Stop();
+                    _logger.LogDebug("Saved PasswordResetToken (attempt {Attempt}) in {Elapsed}ms", attempt + 1, sw.ElapsedMilliseconds);
+                    persistedResetToken = tokenToInsert;
+                    break;
+                }
+                catch (DbUpdateException ex) when (IsDuplicateConstraint(ex, "auth_reset_tokens_pkey"))
+                {
+                    sw.Stop();
+                    _logger.LogWarning(ex, "Duplicate key on PasswordResetToken insert (attempt {Attempt}). Checking for persisted token.", attempt + 1);
+                    db.Entry(tokenToInsert).State = EntityState.Detached;
+
+                    // The DB may have persisted the token in a previous (retried) attempt.
+                    var persisted = await db.PasswordResetTokens.AsNoTracking()
+                        .FirstOrDefaultAsync(x => x.Token == tokenToInsert.Token, cancellationToken);
+                    if (persisted is not null)
+                    {
+                        persistedResetToken = persisted;
+                        break;
+                    }
+
+                    if (attempt == maxInsertAttempts - 1)
+                    {
+                        throw;
+                    }
+
+                    await Task.Delay(50, cancellationToken);
+                    continue;
+                }
+                catch (DbUpdateException ex) when (ex.InnerException is Npgsql.NpgsqlException pg && pg.SqlState == "23505")
+                {
+                    // fallback for providers that surface Npgsql directly
+                    sw.Stop();
+                    _logger.LogWarning(ex, "Duplicate key on PasswordResetToken insert (attempt {Attempt}). Checking for persisted token.", attempt + 1);
+                    db.Entry(tokenToInsert).State = EntityState.Detached;
+
+                    var persisted = await db.PasswordResetTokens.AsNoTracking()
+                        .FirstOrDefaultAsync(x => x.Token == tokenToInsert.Token, cancellationToken);
+                    if (persisted is not null)
+                    {
+                        persistedResetToken = persisted;
+                        break;
+                    }
+
+                    if (attempt == maxInsertAttempts - 1)
+                    {
+                        throw;
+                    }
+
+                    await Task.Delay(50, cancellationToken);
+                    continue;
+                }
             }
 
-            await _publisher.PublishAsync("usuario.creado", new
+            if (persistedResetToken is not null)
             {
-                id = string.IsNullOrWhiteSpace(empleadoId) ? null : empleadoId,
-                email,
-                token = resetToken.Token
-            }, cancellationToken);
+                // publish without blocking
+                await _publisher.PublishAsync("usuario.creado", new
+                {
+                    id = string.IsNullOrWhiteSpace(empleadoId) ? null : empleadoId,
+                    email,
+                    token = persistedResetToken.Token
+                }, CancellationToken.None, fireAndForget: true);
+            }
 
             _logger.LogInformation("Usuario creado/actualizado por evento empleado.creado: {Email}", email);
             return;

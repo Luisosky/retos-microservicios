@@ -88,35 +88,91 @@ public class AuthController : ControllerBase
                 IsUsed = false
             };
 
-            _dbContext.PasswordResetTokens.Add(recoveryToken);
-            try
+            // Try inserting the token with a small retry loop in case of rare GUID collision
+            const int maxInsertAttempts = 3;
+            PasswordResetToken? persistedRecoveryToken = null;
+            for (var attempt = 0; attempt < maxInsertAttempts; attempt++)
             {
-                await _dbContext.SaveChangesAsync();
-            }
-            catch (DbUpdateException ex) when (IsDuplicateConstraint(ex, "auth_reset_tokens_pkey"))
-            {
-                _dbContext.Entry(recoveryToken).State = EntityState.Detached;
-
-                // With transient retries enabled, an INSERT can succeed server-side and still
-                // throw locally; if the same entity is retried, PostgreSQL reports duplicate PK.
-                var persistedToken = await _dbContext.PasswordResetTokens
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.Id == recoveryToken.Id);
-
-                if (persistedToken is null)
+                var tokenToInsert = new PasswordResetToken
                 {
-                    throw;
-                }
+                    Id = Guid.NewGuid(),
+                    UserId = user.Id,
+                    Token = Guid.NewGuid().ToString(),
+                    ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(GetResetTokenExpirationMinutes()),
+                    IsUsed = false
+                };
 
-                recoveryToken = persistedToken;
+                _dbContext.PasswordResetTokens.Add(tokenToInsert);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    await _dbContext.SaveChangesAsync();
+                    sw.Stop();
+                    _logger.LogDebug("Saved PasswordResetToken (attempt {Attempt}) in {Elapsed}ms", attempt + 1, sw.ElapsedMilliseconds);
+                    persistedRecoveryToken = tokenToInsert;
+                    break;
+                }
+                catch (DbUpdateException ex) when (IsDuplicateConstraint(ex, "auth_reset_tokens_pkey"))
+                {
+                    sw.Stop();
+                    _logger.LogWarning(ex, "Duplicate key on PasswordResetToken insert (attempt {Attempt}). Checking for persisted token.", attempt + 1);
+                    _dbContext.Entry(tokenToInsert).State = EntityState.Detached;
+
+                    var persisted = await _dbContext.PasswordResetTokens.AsNoTracking()
+                        .FirstOrDefaultAsync(x => x.Token == tokenToInsert.Token);
+                    if (persisted is not null)
+                    {
+                        persistedRecoveryToken = persisted;
+                        break;
+                    }
+
+                    if (attempt == maxInsertAttempts - 1)
+                    {
+                        // last attempt failed, rethrow to be handled by outer catch
+                        throw;
+                    }
+
+                    // small delay to avoid tight loop
+                    await Task.Delay(50);
+                    continue;
+                }
+                catch (DbUpdateException ex) when (ex.InnerException is PostgresException pg && pg.SqlState == PostgresErrorCodes.UniqueViolation)
+                {
+                    sw.Stop();
+                    _logger.LogWarning(ex, "Duplicate key on PasswordResetToken insert (attempt {Attempt}). Checking for persisted token.", attempt + 1);
+                    _dbContext.Entry(tokenToInsert).State = EntityState.Detached;
+
+                    var persisted = await _dbContext.PasswordResetTokens.AsNoTracking()
+                        .FirstOrDefaultAsync(x => x.Token == tokenToInsert.Token);
+                    if (persisted is not null)
+                    {
+                        persistedRecoveryToken = persisted;
+                        break;
+                    }
+
+                    if (attempt == maxInsertAttempts - 1)
+                    {
+                        throw;
+                    }
+
+                    await Task.Delay(50);
+                    continue;
+                }
             }
 
-            await _publisher.PublishAsync("usuario.recuperacion", new
+            // Publish event without blocking caller; allow publisher to handle timeouts
+            if (persistedRecoveryToken is not null)
             {
-                id = user.Id,
-                email,
-                token = recoveryToken.Token
-            });
+                var pubSw = System.Diagnostics.Stopwatch.StartNew();
+                await _publisher.PublishAsync("usuario.recuperacion", new
+                {
+                    id = user.Id,
+                    email,
+                    token = persistedRecoveryToken.Token
+                }, CancellationToken.None, fireAndForget: true);
+                pubSw.Stop();
+                _logger.LogDebug("Enqueued usuario.recuperacion publish in {Elapsed}ms", pubSw.ElapsedMilliseconds);
+            }
 
             return Ok(new { message = "Si el correo existe, se enviaron instrucciones de recuperacion" });
         }
