@@ -35,10 +35,12 @@ Publica:
 - `JWT_SECRET` (obligatoria en entornos reales)
 - `JWT_EXPIRATION_MINUTES` (default: `60`)
 - `RESET_TOKEN_EXPIRATION_MINUTES` (default: `30`)
+- `AUTH_PASSWORD_HASH_WORK_FACTOR` (default: `8`, rango recomendado `8`-`14`)
 - `RABBITMQ_HOST` (default: `rabbitmq-broker`)
 - `RABBITMQ_PORT` (default: `5672`)
 - `RABBITMQ_USERNAME` (default: `guest`)
 - `RABBITMQ_PASSWORD` (default: `guest`)
+- `RABBITMQ_CONNECT_TIMEOUT_SECONDS` (default: `5`)
 - `AUTH_EXCHANGE` (default: `empleados.events`)
 - `AUTH_QUEUE` (default: `auth.queue`)
 

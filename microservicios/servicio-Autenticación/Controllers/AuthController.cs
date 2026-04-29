@@ -44,7 +44,17 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Debe enviar usuario o email" });
         }
 
-        var user = await _dbContext.Users.FirstOrDefaultAsync(x => x.Email == identifier);
+        var user = await _dbContext.Users
+            .AsNoTracking()
+            .Where(x => x.Email == identifier)
+            .Select(x => new
+            {
+                x.Email,
+                x.Role,
+                x.PasswordHash,
+                x.IsActive
+            })
+            .FirstOrDefaultAsync();
 
         if (user is null || !user.IsActive || string.IsNullOrWhiteSpace(user.PasswordHash)
             || !BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
@@ -52,8 +62,8 @@ public class AuthController : ControllerBase
             return Unauthorized(new { message = "Credenciales invalidas" });
         }
 
-        var token = _jwtTokenService.GenerateToken(user);
-        return Ok(BuildAuthResponse(user, token));
+        var token = _jwtTokenService.GenerateToken(user.Email, user.Role);
+        return Ok(BuildAuthResponse(user.Email, user.Role, token));
     }
 
     [HttpPost("recover-password")]
@@ -65,14 +75,9 @@ public class AuthController : ControllerBase
 
             var user = await EnsureRecoverUserAsync(email);
 
-            var activeTokens = await _dbContext.PasswordResetTokens
+            await _dbContext.PasswordResetTokens
                 .Where(x => x.UserId == user.Id && !x.IsUsed && x.ExpiresAt > DateTimeOffset.UtcNow)
-                .ToListAsync();
-
-            foreach (var token in activeTokens)
-            {
-                token.IsUsed = true;
-            }
+                .ExecuteUpdateAsync(setters => setters.SetProperty(t => t.IsUsed, true));
 
             PasswordResetToken recoveryToken = new PasswordResetToken
             {
@@ -140,7 +145,7 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Usuario inhabilitado" });
         }
 
-        resetToken.User.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword);
+        resetToken.User.PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.NewPassword, GetPasswordHashWorkFactor());
         resetToken.User.UpdatedAt = DateTimeOffset.UtcNow;
         resetToken.IsUsed = true;
 
@@ -174,16 +179,29 @@ public class AuthController : ControllerBase
         return Ok(new { subject, role });
     }
 
-    private AuthResponse BuildAuthResponse(User user, string token)
+    private AuthResponse BuildAuthResponse(string email, string role, string token)
     {
         return new AuthResponse
         {
             AccessToken = token,
             TokenType = "Bearer",
             ExpiresInSeconds = _jwtTokenService.GetTokenDurationSeconds(),
-            Email = user.Email,
-            Role = user.Role
+            Email = email,
+            Role = role
         };
+    }
+
+    private int GetPasswordHashWorkFactor()
+    {
+        var raw = Environment.GetEnvironmentVariable("AUTH_PASSWORD_HASH_WORK_FACTOR")
+            ?? _configuration["Auth:PasswordHashWorkFactor"];
+
+        if (int.TryParse(raw, out var workFactor))
+        {
+            return Math.Clamp(workFactor, 8, 14);
+        }
+
+        return 8;
     }
 
     private int GetResetTokenExpirationMinutes()

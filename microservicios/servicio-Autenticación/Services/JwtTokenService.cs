@@ -11,15 +11,20 @@ public class JwtTokenService : IJwtTokenService
     private const int DefaultExpirationMinutes = 60;
 
     private readonly IConfiguration _configuration;
+    private readonly JwtSecurityTokenHandler _tokenHandler = new();
     private readonly TokenValidationParameters _tokenValidationParameters;
+    private readonly SigningCredentials _signingCredentials;
+    private readonly string _issuer;
+    private readonly string _audience;
+    private readonly int _expirationMinutes;
 
     public JwtTokenService(IConfiguration configuration)
     {
         _configuration = configuration;
 
         var jwtSection = _configuration.GetSection("Jwt");
-        var issuer = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? jwtSection["Issuer"] ?? "auth-service";
-        var audience = Environment.GetEnvironmentVariable("JWT_AUDIENCE") ?? jwtSection["Audience"] ?? "microservices-clients";
+        _issuer = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? jwtSection["Issuer"] ?? "auth-service";
+        _audience = Environment.GetEnvironmentVariable("JWT_AUDIENCE") ?? jwtSection["Audience"] ?? "microservices-clients";
         var secret = Environment.GetEnvironmentVariable("JWT_SECRET") ?? jwtSection["Secret"];
 
         if (string.IsNullOrWhiteSpace(secret))
@@ -27,14 +32,19 @@ public class JwtTokenService : IJwtTokenService
             throw new InvalidOperationException("JWT secret is not configured.");
         }
 
+        _expirationMinutes = GetExpirationMinutes();
+
+        var signingKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
+        _signingCredentials = new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256);
+
         _tokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
-            ValidIssuer = issuer,
+            ValidIssuer = _issuer,
             ValidateAudience = true,
-            ValidAudience = audience,
+            ValidAudience = _audience,
             ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
+            IssuerSigningKey = signingKey,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromSeconds(30)
         };
@@ -42,35 +52,36 @@ public class JwtTokenService : IJwtTokenService
 
     public string GenerateToken(User user)
     {
-        var expiresAt = DateTime.UtcNow.AddMinutes(GetExpirationMinutes());
+        return GenerateToken(user.Email, user.Role);
+    }
+
+    public string GenerateToken(string email, string role)
+    {
+        var expiresAt = DateTime.UtcNow.AddMinutes(_expirationMinutes);
         var now = DateTimeOffset.UtcNow;
-        var credentials = new SigningCredentials(
-            _tokenValidationParameters.IssuerSigningKey!,
-            SecurityAlgorithms.HmacSha256
-        );
 
         var token = new JwtSecurityToken(
-            issuer: _tokenValidationParameters.ValidIssuer,
-            audience: _tokenValidationParameters.ValidAudience,
+            issuer: _issuer,
+            audience: _audience,
             claims:
             [
-                new Claim(JwtRegisteredClaimNames.Sub, user.Email),
-                new Claim(ClaimTypes.Name, user.Email),
-                new Claim(ClaimTypes.Role, user.Role),
-                new Claim("role", user.Role),
+                new Claim(JwtRegisteredClaimNames.Sub, email),
+                new Claim(ClaimTypes.Name, email),
+                new Claim(ClaimTypes.Role, role),
+                new Claim("role", role),
                 new Claim(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64)
             ],
             notBefore: DateTime.UtcNow,
             expires: expiresAt,
-            signingCredentials: credentials
+            signingCredentials: _signingCredentials
         );
 
-        return new JwtSecurityTokenHandler().WriteToken(token);
+        return _tokenHandler.WriteToken(token);
     }
 
     public int GetTokenDurationSeconds()
     {
-        return GetExpirationMinutes() * 60;
+        return _expirationMinutes * 60;
     }
 
     public bool TryValidateToken(string token, out string subject, out string role)
@@ -85,8 +96,7 @@ public class JwtTokenService : IJwtTokenService
 
         try
         {
-            var handler = new JwtSecurityTokenHandler();
-            var principal = handler.ValidateToken(token, _tokenValidationParameters, out _);
+            var principal = _tokenHandler.ValidateToken(token, _tokenValidationParameters, out _);
 
             subject = principal.Claims.FirstOrDefault(c => c.Type == JwtRegisteredClaimNames.Sub)?.Value
                 ?? principal.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name)?.Value

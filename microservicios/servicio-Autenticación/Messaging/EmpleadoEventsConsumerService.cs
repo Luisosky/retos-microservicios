@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using ServicioAutenticacion.Data;
@@ -133,25 +134,38 @@ public class EmpleadoEventsConsumerService : BackgroundService
                     UpdatedAt = DateTimeOffset.UtcNow
                 };
                 db.Users.Add(user);
+
+                try
+                {
+                    await db.SaveChangesAsync(cancellationToken);
+                }
+                catch (DbUpdateException ex) when (IsDuplicateConstraint(ex, "auth_usuarios_pkey") || IsDuplicateConstraint(ex, "auth_usuarios_email_key"))
+                {
+                    db.Entry(user).State = EntityState.Detached;
+                    var existingByEmail = await db.Users.FirstOrDefaultAsync(x => x.Email == email, cancellationToken);
+                    if (existingByEmail is null)
+                    {
+                        throw;
+                    }
+
+                    user = existingByEmail;
+                }
             }
             else
             {
                 user.IsActive = true;
                 user.Role = "USER";
                 user.UpdatedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync(cancellationToken);
             }
 
-            var activeTokens = await db.PasswordResetTokens
+            await db.PasswordResetTokens
                 .Where(x => x.UserId == user.Id && !x.IsUsed && x.ExpiresAt > DateTimeOffset.UtcNow)
-                .ToListAsync(cancellationToken);
+                .ExecuteUpdateAsync(setters => setters.SetProperty(t => t.IsUsed, true), cancellationToken);
 
-            foreach (var token in activeTokens)
+            PasswordResetToken resetToken = new PasswordResetToken
             {
-                token.IsUsed = true;
-            }
-
-            var resetToken = new PasswordResetToken
-            {
+                Id = Guid.NewGuid(),
                 UserId = user.Id,
                 Token = Guid.NewGuid().ToString(),
                 ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(GetResetTokenExpirationMinutes()),
@@ -159,7 +173,25 @@ public class EmpleadoEventsConsumerService : BackgroundService
             };
 
             db.PasswordResetTokens.Add(resetToken);
-            await db.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException ex) when (IsDuplicateConstraint(ex, "auth_reset_tokens_pkey"))
+            {
+                db.Entry(resetToken).State = EntityState.Detached;
+
+                var persistedToken = await db.PasswordResetTokens
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Id == resetToken.Id, cancellationToken);
+
+                if (persistedToken is null)
+                {
+                    throw;
+                }
+
+                resetToken = persistedToken;
+            }
 
             await _publisher.PublishAsync("usuario.creado", new
             {
@@ -223,5 +255,12 @@ public class EmpleadoEventsConsumerService : BackgroundService
         }
 
         return false;
+    }
+
+    private static bool IsDuplicateConstraint(DbUpdateException ex, string constraintName)
+    {
+        return ex.InnerException is PostgresException pgEx
+            && pgEx.SqlState == PostgresErrorCodes.UniqueViolation
+            && string.Equals(pgEx.ConstraintName, constraintName, StringComparison.OrdinalIgnoreCase);
     }
 }

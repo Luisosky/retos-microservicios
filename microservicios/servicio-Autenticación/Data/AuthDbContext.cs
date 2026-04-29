@@ -16,9 +16,15 @@ public class AuthDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
+        var usersTableName = Environment.GetEnvironmentVariable("AUTH_USERS_TABLE");
+        if (string.IsNullOrWhiteSpace(usersTableName))
+        {
+            usersTableName = "auth_usuarios";
+        }
+
         modelBuilder.Entity<User>(entity =>
         {
-            entity.ToTable("auth_usuarios");
+            entity.ToTable(usersTableName);
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Id).HasColumnName("id");
             entity.HasIndex(x => x.Email).IsUnique();

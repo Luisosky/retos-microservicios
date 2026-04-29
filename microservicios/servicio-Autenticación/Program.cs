@@ -36,8 +36,10 @@ authDatabaseUrl = NormalizePostgresConnectionString(authDatabaseUrl);
 var csBuilder = new NpgsqlConnectionStringBuilder(authDatabaseUrl)
 {
     MaxPoolSize = 25,
-    MinPoolSize = 5,
-    KeepAlive = 120
+    MinPoolSize = 0,
+    KeepAlive = 30,
+    ConnectionIdleLifetime = 30,
+    ConnectionPruningInterval = 10
 };
 authDatabaseUrl = csBuilder.ConnectionString;
 
@@ -45,13 +47,13 @@ builder.Services.AddDbContext<AuthDbContext>(options =>
 {
     options.UseNpgsql(authDatabaseUrl, npgsqlOptions =>
     {
-        // Increase command timeout to handle remote database latency
-        npgsqlOptions.CommandTimeout(30);
+        // Keep failed database calls from stalling the request for too long.
+        npgsqlOptions.CommandTimeout(10);
         
-        // Retry transient failures
+        // Retry transient failures once after reopening the connection.
         npgsqlOptions.EnableRetryOnFailure(
-            maxRetryCount: 2,
-            maxRetryDelay: TimeSpan.FromSeconds(2),
+            maxRetryCount: 1,
+            maxRetryDelay: TimeSpan.FromSeconds(1),
             errorCodesToAdd: null);
     });
 });
