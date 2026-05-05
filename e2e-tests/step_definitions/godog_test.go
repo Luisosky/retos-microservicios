@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"testing"
 	"time"
+	"os"
 
 	"github.com/cucumber/godog"
 )
@@ -18,6 +20,20 @@ type apiTestState struct {
 	responseCode int
 	client       *http.Client
 }
+
+// Función para obtener variables de entorno con un valor por defecto
+func getEnv(key, fallback string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return fallback
+}
+
+// Variables globales para las URLs base
+var (
+	AuthURL      = getEnv("AUTH_URL", "http://localhost:8084")
+	EmpleadosURL = getEnv("EMPLEADOS_URL", "http://localhost:8080")
+)
 
 // ==========================================
 // PASOS DE LA PRUEBA DE HUMO (Reto 5 - Punto 1)
@@ -69,7 +85,6 @@ func InitializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^la API de autenticación debe bloquear la solicitud$`, estado.laAPIDeAutenticacinDebeBloquearLaSolicitud)
 }
 
-// ESTA ES LA FUNCIÓN QUE BUSCA GO TEST PARA INICIAR
 func TestFeatures(t *testing.T) {
 	suite := godog.TestSuite{
 		ScenarioInitializer: InitializeScenario,
@@ -86,14 +101,13 @@ func TestFeatures(t *testing.T) {
 }
 
 // ==========================================
-// PASOS DE SEGURIDAD (Reto 5 - Punto 2) - IMPLEMENTACIÓN REAL
+// PASOS DE SEGURIDAD (Reto 5 - Punto 2)
 // ==========================================
 
 func (a *apiTestState) queElSistemaEstDesplegadoYOperativo() error {
 	// Inicializamos un cliente HTTP con un timeout para que no se quede colgado
-	a.client = &http.Client{Timeout: 30 * time.Second}
+	a.client = &http.Client{Timeout: 60 * time.Second}
 
-	// Hacemos ping al health check de autenticación (puerto 8084)
 	resp, err := a.client.Get("http://localhost:8084/health")
 	if err != nil {
 		return fmt.Errorf("el servicio de autenticación no está respondiendo: %v", err)
@@ -113,11 +127,38 @@ func (a *apiTestState) queElServicioDeEmpleadosEstDisponible() error {
 	return nil
 }
 
+func (a *apiTestState) consultoLaListaDeEmpleadosSinTokenDeAutenticacin() error {
+	req, _ := http.NewRequest("GET", "http://localhost:8080/empleado", nil)
+
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	a.responseCode = resp.StatusCode
+	return nil
+}
+
 func (a *apiTestState) queEstoyAutenticadoConElRol(rol string) error {
+	var email, password string
+
+	// 1. Asignamos credenciales diferentes según el rol que pida Gherkin
+	switch rol {
+	case "ADMIN":
+		email = "l.castellanos@empresa.com"
+		password = "Micro123456!"
+	case "USER":
+
+		email = "a.salazar@empresa.com"
+		password = "Micro123456!"
+	default:
+		return fmt.Errorf("el rol '%s' no está configurado", rol)
+	}
 
 	credentials := map[string]string{
-		"email":    "usuario_" + rol + "@empresa.com", // Ej: usuario_ADMIN@empresa.com
-		"password": "Password123!",
+		"email":    email,
+		"password": password,
 	}
 
 	jsonData, _ := json.Marshal(credentials)
@@ -132,30 +173,24 @@ func (a *apiTestState) queEstoyAutenticadoConElRol(rol string) error {
 		return fmt.Errorf("falló el login para el rol %s, código: %d", rol, resp.StatusCode)
 	}
 
-	// Extraer el token de la respuesta JSON
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	fmt.Printf("Respuesta de C# para %s: %s\n", rol, string(bodyBytes))
 
-	// Ajusta la llave "token" según cómo devuelva el JWT tu API en C#
+	var result map[string]interface{}
+	json.Unmarshal(bodyBytes, &result)
+
 	if t, ok := result["token"].(string); ok {
 		a.token = t
 		return nil
+	} else if t, ok := result["accessToken"].(string); ok {
+		a.token = t
+		return nil
+	} else if t, ok := result["Token"].(string); ok {
+		a.token = t
+		return nil
 	}
-	return fmt.Errorf("no se encontró el JWT en la respuesta de login")
-}
 
-func (a *apiTestState) consultoLaListaDeEmpleadosSinTokenDeAutenticacin() error {
-	req, _ := http.NewRequest("GET", "http://localhost:8080/empleado", nil)
-	// No agregamos header de Authorization
-
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	a.responseCode = resp.StatusCode
-	return nil
+	return fmt.Errorf("no se encontró el JWT en la respuesta. Revisa el JSON impreso arriba")
 }
 
 func (a *apiTestState) consultoLaListaDeEmpleadosEnviandoElToken(tokenFalso string) error {
@@ -187,18 +222,21 @@ func (a *apiTestState) consultoLaListaDeEmpleados() error {
 }
 
 func (a *apiTestState) cuandoIntentoCrearUnNuevoEmpleadoEnElSistema() error {
-	// JSON ajustado al modelo exacto de Spring Boot
+
+	idUnico := strconv.FormatInt(time.Now().Unix(), 10)
+
 	nuevoEmpleado := map[string]interface{}{
-		"numeroEmpleado": "EMP999",
-		"email":          "testbdd999@empresa.com",
+		"numeroEmpleado": "EMP" + idUnico,
+		"email":          "testbdd" + idUnico + "@empresa.com",
 		"nombre":         "Automatización",
 		"apellido":       "Prueba",
 		"cargo":          "Ingeniero de Pruebas",
 		"area":           "QA",
-		"departamentoId": "DEP001",
-		"fechaIngreso":   "2026-04-15",
+		"departamentoId": "Dep001",
+		"fechaIngreso":   time.Now().Format("2006-01-02"),
 		"estado":         "ACTIVO",
 	}
+
 	jsonData, _ := json.Marshal(nuevoEmpleado)
 
 	req, _ := http.NewRequest("POST", "http://localhost:8080/empleado", bytes.NewBuffer(jsonData))
@@ -234,7 +272,6 @@ func (a *apiTestState) registroUnNuevoEmpleadoConDatosVlidos() error {
 	idUnico := strconv.FormatInt(time.Now().Unix(), 10)
 	nuevoCorreo = "nuevo" + idUnico + "@empresa.com"
 
-	// Usamos exactamente el modelo de Spring Boot que compartiste
 	nuevoEmpleado := map[string]interface{}{
 		"numeroEmpleado": "EMP" + idUnico,
 		"email":          nuevoCorreo,
@@ -242,8 +279,8 @@ func (a *apiTestState) registroUnNuevoEmpleadoConDatosVlidos() error {
 		"apellido":       "Onboarding",
 		"cargo":          "Desarrollador",
 		"area":           "TI",
-		"departamentoId": "DEP001",
-		"fechaIngreso":   time.Now().Format("2006-01-02"), // Formato yyyy-MM-dd
+		"departamentoId": "Dep001",
+		"fechaIngreso":   time.Now().Format("2006-01-02"),
 		"estado":         "ACTIVO",
 	}
 	jsonData, _ := json.Marshal(nuevoEmpleado)
@@ -263,42 +300,57 @@ func (a *apiTestState) registroUnNuevoEmpleadoConDatosVlidos() error {
 }
 
 func (a *apiTestState) esperoAQueSusCredencialesSeanGeneradasAutomticamenteMediantePolling() error {
-	// ⚠️ JUSTIFICACIÓN DEL POLLING (Requisito de rúbrica):
-	// En lugar de hacer un time.Sleep(10 * time.Second) bloqueante y ciego,
-	// intentamos hacer login. Si falla, esperamos medio segundo y reintentamos,
-	// hasta un máximo de 10 intentos (5 segundos total). Esto hace la prueba rápida y resiliente.
-
-	maxIntentos := 10
-	tiempoEspera := 500 * time.Millisecond
-
-	// Asume la contraseña por defecto que tu microservicio de C# asigna al crear usuarios
-	// CAMBIA ESTO por la contraseña real por defecto de tu sistema
-	passwordPorDefecto := "Password123!"
-
+	passwordPorDefecto := "Micro123456!"
 	credentials := map[string]string{
 		"email":    nuevoCorreo,
 		"password": passwordPorDefecto,
 	}
 	jsonData, _ := json.Marshal(credentials)
 
-	for i := 1; i <= maxIntentos; i++ {
-		resp, err := a.client.Post("http://localhost:8084/auth/login", "application/json", bytes.NewBuffer(jsonData))
+	fmt.Printf("\n[Hilo Principal] Iniciando búsqueda asíncrona para %s...\n", nuevoCorreo)
 
-		if err == nil && resp.StatusCode == http.StatusOK {
-			fmt.Printf("Credenciales detectadas exitosamente en el intento %d\n", i)
-			resp.Body.Close()
-			return nil // ¡El evento de RabbitMQ se procesó y las credenciales ya existen!
+	// 1. Creamos un canal por donde el hilo nos avisará si tuvo éxito
+	exitoChan := make(chan bool)
+	
+	// 2. Definimos el tiempo máximo que el Hilo Principal va a esperar (30 segundos)
+	timeout := time.After(30 * time.Second)
+
+	// 3. ¡LANZAMOS EL HILO! (Goroutine)
+	// Todo lo que está dentro de go func() se ejecuta en segundo plano
+	go func() {
+		clienteRapido := &http.Client{Timeout: 3 * time.Second}
+		intento := 1
+
+		for {
+			url := AuthURL + "/auth/login" // <-- Usando la variable global
+			resp, err := clienteRapido.Post(url, "application/json", bytes.NewBuffer(jsonData))
+
+			if err == nil && resp.StatusCode == http.StatusOK {
+				fmt.Printf("✅ [Hilo Secundario] ¡Credenciales listas en el intento %d!\n", intento)
+				resp.Body.Close()
+				exitoChan <- true // Le avisamos al Hilo Principal que terminamos
+				return            // Matamos este hilo
+			}
+
+			if resp != nil {
+				resp.Body.Close()
+			}
+
+			fmt.Printf("⏳ [Hilo Secundario] Intento %d fallido. Reintentando...\n", intento)
+			intento++
+			time.Sleep(1500 * time.Millisecond) // Pausa de 1.5s antes de volver a intentar
 		}
+	}()
 
-		if resp != nil {
-			resp.Body.Close()
-		}
-
-		// Si llegamos aquí, el C# aún no ha procesado el evento. Esperamos y volvemos a intentar.
-		time.Sleep(tiempoEspera)
+	// 4. El Hilo Principal se queda esperando aquí (Bloqueo Inteligente)
+	select {
+	case <-exitoChan:
+		// El hilo secundario mandó la señal de éxito
+		return nil
+	case <-timeout:
+		// El cronómetro de 30 segundos llegó a cero antes de recibir éxito
+		return fmt.Errorf("timeout: Las credenciales no se generaron después de 30 segundos")
 	}
-
-	return fmt.Errorf("timeout: Las credenciales no se generaron después de %v", time.Duration(maxIntentos)*tiempoEspera)
 }
 
 func (a *apiTestState) elNuevoEmpleadoDeberaPoderIniciarSesinEnElSistemaExitosamente() error {
@@ -317,7 +369,7 @@ func (a *apiTestState) intentoRegistrarUnEmpleadoSinElCampoDeCorreoElectrnico() 
 		"apellido":       "Validacion",
 		"cargo":          "N/A",
 		"area":           "N/A",
-		"departamentoId": "DEP001",
+		"departamentoId": "Dep001",
 		"fechaIngreso":   "2026-04-15",
 	}
 	jsonData, _ := json.Marshal(empleadoInvalido)
@@ -355,7 +407,7 @@ func (a *apiTestState) quePreparoUnEmpleadoTemporalParaSuPosteriorDesvinculacin(
 		"apellido":       "Offboarding",
 		"cargo":          "N/A",
 		"area":           "N/A",
-		"departamentoId": "DEP001",
+		"departamentoId": "Dep001",
 		"fechaIngreso":   time.Now().Format("2006-01-02"),
 		"estado":         "ACTIVO",
 	}
@@ -417,15 +469,18 @@ func (a *apiTestState) elSistemaDebeRechazarSusIntentosDeInicioDeSesin() error {
 }
 
 func (a *apiTestState) elEmpleadoDesvinculadoIntentaSolicitarUnaRecuperacinDeContrasea() error {
-	payload := map[string]string{
-		"email": offboardEmail,
-	}
+	payload := map[string]string{"email": offboardEmail}
 	jsonData, _ := json.Marshal(payload)
 
-	// Usamos el endpoint de recuperación de tu documento de rutas
-	resp, err := a.client.Post("http://localhost:8084/auth/recover-password", "application/json", bytes.NewBuffer(jsonData))
+	req, _ := http.NewRequest("POST", "http://localhost:8084/auth/recover-password", bytes.NewBuffer(jsonData))
+	req.Header.Add("Content-Type", "application/json")
+
+	// Creamos un cliente que solo espere 3 segundos en lugar de 60
+	clienteRapido := &http.Client{Timeout: 3 * time.Second}
+
+	resp, err := clienteRapido.Do(req)
 	if err != nil {
-		return err
+		return err // Si falla rápido, al menos no te congela la terminal
 	}
 	defer resp.Body.Close()
 

@@ -37,3 +37,9 @@ seguridad.feature: Valida las reglas del Control de Acceso Basado en Roles (RBAC
 onboarding.feature: Evalúa la interacción entre el microservicio de Empleados (Java) y el microservicio de Autenticación. Verifica que, tras la creación exitosa (201 Created) de un empleado, el evento emitido por RabbitMQ sea procesado y se generen las credenciales para un inicio de sesión exitoso.
 
 offboarding.feature: Valida el proceso de desvinculación de un empleado del sistema. Se comprueba la eliminación exitosa del recurso, el bloqueo inmediato para iniciar sesión en la API de Auth, y el rechazo en los intentos de utilizar endpoints de recuperación de contraseña, garantizando la seguridad post-empleo.
+
+
+
+curl -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJsLmNhc3RlbGxhbm9zQGVtcHJlc2EuY29tIiwiaHR0cDovL3NjaGVtYXMueG1sc29hcC5vcmcvd3MvMjAwNS8wNS9pZGVudGl0eS9jbGFpbXMvbmFtZSI6ImwuY2FzdGVsbGFub3NAZW1wcmVzYS5jb20iLCJodHRwOi8vc2NoZW1hcy5taWNyb3NvZnQuY29tL3dzLzIwMDgvMDYvaWRlbnRpdHkvY2xhaW1zL3JvbGUiOiJBRE1JTiIsInJvbGUiOiJBRE1JTiIsImlhdCI6MTc3NjgyMjk1MCwibmJmIjoxNzc2ODIyOTUwLCJleHAiOjE3NzY4MjY1NTAsImlzcyI6ImF1dGgtc2VydmljZSIsImF1ZCI6Im1pY3Jvc2VydmljZXMtY2xpZW50cyJ9.W1IF3bbcGndTmm8YR7XKq2D1rJIYrQpDWp6h-wsFGt8" http://localhost:8081/departamentos
+
+
