@@ -1,0 +1,152 @@
+jenkins:
+  systemMessage: "Jenkins pre-configurado con JCasC - Microservicios Pipeline"
+  
+  # Configuración del modo seguridad
+  securityRealm:
+    local:
+      allowsSignup: false
+  
+  authorizationStrategy:
+    roleBased:
+      roles:
+        global:
+          - name: "admin"
+            description: "Administrador de Jenkins"
+            permissions:
+              - "hudson.model.Hudson.Administer"
+          - name: "developer"
+            description: "Desarrollador"
+            permissions:
+              - "hudson.model.Hudson.Read"
+              - "hudson.model.Item.Build"
+              - "hudson.model.Item.Cancel"
+              - "hudson.model.Item.Read"
+  
+  # Configuración de credenciales
+  credentials:
+    system:
+      domainCredentials:
+        - credentials:
+            # Credencial para JWT Secret (tipo: Secret text)
+            # El valor se inyecta desde el .env raíz vía docker-compose
+            - simple:
+                scope: GLOBAL
+                id: "jwt-secret-key"
+                secret: "${JWT_SECRET}"
+                description: "JWT Secret Key para firma de tokens - Microservicios"
+            
+            # Credencial para API Key de SonarQube
+            - string:
+                scope: GLOBAL
+                id: "sonarqube-token"
+                secret: "${SONARQUBE_TOKEN}"
+                description: "SonarQube Authentication Token"
+  
+  # Configuración de trabajos
+  jobs:
+    # Pipeline de prueba para verificar Docker
+    - script: >
+        pipelineJob('Prueba-Docker') {
+          description('Pipeline de prueba para verificar la instalación de Docker en Jenkins')
+          
+          definition {
+            cps {
+              script('''
+                pipeline {
+                  agent any
+                  
+                  stages {
+                    stage('Verificar Docker') {
+                      steps {
+                        echo '================================'
+                        echo 'Iniciando verificación de Docker'
+                        echo '================================'
+                        sh 'docker --version'
+                      }
+                    }
+                    
+                    stage('Listar contenedores') {
+                      steps {
+                        echo '================================'
+                        echo 'Listando contenedores activos'
+                        echo '================================'
+                        sh 'docker ps'
+                      }
+                    }
+                    
+                    stage('Información del sistema') {
+                      steps {
+                        echo '================================'
+                        echo 'Información adicional del sistema'
+                        echo '================================'
+                        sh 'docker info | head -20'
+                      }
+                    }
+                  }
+                  
+                  post {
+                    success {
+                      echo '✓ Pipeline completado exitosamente'
+                    }
+                    failure {
+                      echo '✗ Error durante la ejecución del pipeline'
+                    }
+                  }
+                }
+              ''')
+              sandbox(true)
+            }
+          }
+        }
+    
+    # Pipeline CI para Microservicio Gestión de Empleados
+    - script: >
+        pipelineJob('Empleados-Pipeline') {
+          description('Pipeline CI/CD para Microservicio Gestión de Empleados - Maven, JWT, SonarQube')
+          
+          // Triggers: ejecutar cuando hay cambios en el repositorio
+          triggers {
+            // Descomenta para polling cada 15 minutos
+            // pollSCM('H/15 * * * *')
+          }
+          
+          // Definición del pipeline desde Jenkinsfile en repositorio
+          definition {
+            cpsScm {
+              scm {
+                git {
+                  remote {
+                    // NOTA: Reemplaza con tu URL real del repositorio
+                    url('file:///var/jenkins_home/workspace/Empleados-Pipeline')
+                    credentials('github-credentials')
+                  }
+                  branches('*/main', '*/develop')
+                  extensions {
+                    cloneOption {
+                      depth(1)
+                      noTags(false)
+                      reference('')
+                      timeout(10)
+                    }
+                  }
+                }
+              }
+              scriptPath('gestion-empleados/Jenkinsfile')
+            }
+          }
+          
+          properties {
+            // Preservar logs del build
+            logRotator {
+              daysToKeepStr('30')
+              numToKeepStr('30')
+              artifactDaysToKeepStr('5')
+              artifactNumToKeepStr('10')
+            }
+          }
+        }
+
+# Configuración de ubicaciones de artefactos
+unclassified:
+  location:
+    url: "http://localhost:9090/"

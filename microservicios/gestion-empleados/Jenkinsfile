@@ -1,0 +1,240 @@
+// Pipeline CI para Microservicio Gestión de Empleados
+// Incluye: Build, Test con JWT, SonarQube, Notificaciones
+
+pipeline {
+  agent {
+    docker {
+      image 'maven:3.9-eclipse-temurin-17'
+      args '-v /var/run/docker.sock:/var/run/docker.sock -v maven-cache:/root/.m2'
+      reuseNode true
+    }
+  }
+
+  options {
+    // Mantener últimos 30 builds
+    buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '5'))
+    // Timeout de 30 minutos
+    timeout(time: 30, unit: 'MINUTES')
+    // Timestamps en los logs
+    timestamps()
+  }
+
+  parameters {
+    booleanParam(name: 'RUN_SONAR', defaultValue: false, description: 'Ejecutar análisis SonarQube')
+  }
+
+  environment {
+    // Recuperar JWT_SECRET desde Jenkins Credentials (tipo: Secret text)
+    // La credencial debe estar registrada en Jenkins como "jwt-secret-key"
+    JWT_SECRET = credentials('jwt-secret-key')
+    
+    // Otras variables de entorno necesarias para las pruebas
+    JWT_ISSUER = 'auth-service'
+    JWT_AUDIENCE = 'microservices-clients'
+    JWT_EXPIRATION_MINUTES = '60'
+    
+    // Variables para reportes
+    JACOCO_REPORT_PATH = 'target/site/jacoco/jacoco.xml'
+    SONAR_PROJECT_KEY = 'com.microservicios:gestion-empleados'
+    SONAR_PROJECT_NAME = 'Gestion-Empleados'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        script {
+          echo "📦 Clonando repositorio..."
+          // Si ejecutas desde un repositorio Git, descomenta:
+          // checkout scm
+          
+          // Para desarrollo local, simplemente mostrar estructura
+          sh 'ls -la'
+        }
+      }
+    }
+
+    stage('Build') {
+      steps {
+        script {
+          echo "🔨 Compilando con Maven..."
+          sh '''
+            mvn clean compile \
+              -DskipTests \
+              -Duser.timezone=America/Mexico_City \
+              -Dfile.encoding=UTF-8 \
+              -q
+          '''
+        }
+      }
+    }
+
+    stage('Test') {
+      steps {
+        script {
+          echo "🧪 Ejecutando pruebas unitarias e integración..."
+          sh '''
+            # Mostrar variables de entorno (sin exponer la clave)
+            echo "================================"
+            echo "Configuración de JWT:"
+            echo "JWT_ISSUER: ${JWT_ISSUER}"
+            echo "JWT_AUDIENCE: ${JWT_AUDIENCE}"
+            echo "JWT_EXPIRATION: ${JWT_EXPIRATION_MINUTES} minutos"
+            echo "JWT_SECRET_CONFIGURED: $([ -n "$JWT_SECRET" ] && echo 'SI' || echo 'NO')"
+            echo "================================"
+            
+            # Ejecutar tests con cobertura JaCoCo
+            mvn test \
+              -Duser.timezone=America/Mexico_City \
+              -Dfile.encoding=UTF-8 \
+              -DargLine="-Xmx1024m" \
+              org.jacoco:jacoco-maven-plugin:prepare-agent \
+              org.jacoco:jacoco-maven-plugin:report \
+              -q
+          '''
+        }
+      }
+    }
+
+    stage('Code Coverage') {
+      steps {
+        script {
+          echo "📊 Verificando cobertura de código..."
+          sh '''
+            # Generar reporte JaCoCo en XML para SonarQube
+            mvn org.jacoco:jacoco-maven-plugin:report \
+              -q
+            
+            # Mostrar resumen de cobertura
+            if [ -f target/site/jacoco/jacoco.xml ]; then
+              echo "✓ Reporte JaCoCo generado exitosamente"
+              echo "Ruta: ${JACOCO_REPORT_PATH}"
+            else
+              echo "⚠ Advertencia: Reporte JaCoCo no encontrado"
+            fi
+          '''
+        }
+      }
+    }
+
+    stage('Analyze with SonarQube') {
+      when {
+        expression { params.RUN_SONAR == true }
+      }
+      steps {
+        script {
+          echo "🔍 Ejecutando análisis SonarQube..."
+          sh '''
+            mvn sonar:sonar \
+              -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+              -Dsonar.projectName=${SONAR_PROJECT_NAME} \
+              -Dsonar.sources=src/main/java \
+              -Dsonar.tests=src/test/java \
+              -Dsonar.coverage.jacoco.xmlReportPaths=${JACOCO_REPORT_PATH} \
+              -q
+          '''
+        }
+      }
+    }
+
+    stage('Build Docker Image') {
+      steps {
+        script {
+          echo "🐳 Construyendo imagen Docker..."
+          sh '''
+            # Empaquetar aplicación
+            mvn package -DskipTests -q
+            
+            # Verificar artefacto generado
+            if [ -f target/*.jar ]; then
+              echo "✓ Artefacto JAR generado"
+              ls -lh target/*.jar
+            else
+              echo "⚠ No se encontró archivo JAR"
+            fi
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      script {
+        echo "📋 Recopilando reportes..."
+        
+        // Archivar reportes de prueba
+        junit testResults: 'target/surefire-reports/*.xml', 
+              allowEmptyResults: true,
+              skipPublishingChecks: true
+        
+        // Archivar reporte JaCoCo
+        publishHTML target: [
+          reportDir: 'target/site/jacoco',
+          reportFiles: 'index.html',
+          reportName: 'JaCoCo Coverage Report',
+          alwaysLinkToLastBuild: true,
+          keepAll: true
+        ]
+      }
+    }
+
+    success {
+      script {
+        echo "✅ Pipeline completado exitosamente"
+        echo """
+        ================================
+        📊 RESUMEN DEL BUILD
+        ================================
+        Estado: SUCCESS
+        Proyecto: Gestion-Empleados
+        Build: #${BUILD_NUMBER}
+        Duración: ${currentBuild.durationString}
+        
+        📝 Logs: ${BUILD_URL}console
+        📈 Reportes: ${BUILD_URL}artifact/
+        ================================
+        """
+      }
+    }
+
+    unstable {
+      script {
+        echo "⚠️  Pipeline completado con advertencias"
+      }
+    }
+
+    failure {
+      script {
+        echo """
+        ❌ Pipeline FALLIDO
+        ================================
+        Proyecto: Gestion-Empleados
+        Build: #${BUILD_NUMBER}
+        
+        🔍 Ver detalles: ${BUILD_URL}console
+        ================================
+        """
+      }
+    }
+
+    aborted {
+      script {
+        echo "🛑 Pipeline fue cancelado"
+      }
+    }
+
+    cleanup {
+      script {
+        echo "🧹 Limpiando espacios de trabajo..."
+        // Los volúmenes de Maven se mantienen en cache
+        cleanWs(
+          deleteDirs: true,
+          patterns: [
+            [pattern: 'target/**', type: 'INCLUDE'],
+            [pattern: '.sonar/**', type: 'INCLUDE']
+          ]
+        )
+      }
+    }
+  }
+}
