@@ -56,7 +56,7 @@ curl http://localhost:9090/login
 
 | Archivo | Ubicación | Propósito |
 |---------|-----------|----------|
-| **.env.example** | Jenkins/ | Plantilla de variables secretas |
+| **.env** | Raíz | Variables reales de secretos |
 | **docker-compose.yml** | Raíz | Actualizado con jenkins + env vars |
 
 #### Características Entregadas
@@ -79,9 +79,8 @@ curl http://localhost:9090/login
 #### Cómo Levantar (Parte 2)
 
 ```bash
-# 1. Preparar .env
-cp Jenkins/.env.example .env
-# Editar con JWT_SECRET y SONARQUBE_TOKEN
+# 1. Verificar .env
+# El archivo raíz ya debe contener JWT_SECRET y SONARQUBE_TOKEN
 
 # 2. Levantar Jenkins
 docker-compose up --build -d jenkins
@@ -117,7 +116,7 @@ microservicios/
 │   ├── casc.yaml                     ← ACTUALIZADO (Part 2)
 │   ├── README.md                     ← Part 1
 │   ├── CI_PIPELINE_PARTE2.md         ← Part 2
-│   ├── .env.example                  ← Part 2
+│   ├── .env                          ← Variables reales
 │   ├── verify_pipeline.sh            ← Part 2
 │   └── verify_pipeline.ps1           ← Part 2
 │
@@ -186,9 +185,8 @@ Logs (*** - enmascarado)
 - [ ] Puertos 9090, 50000 libres
 
 ### Setup Inicial
-- [ ] Copiar `Jenkins/.env.example` → `.env`
-- [ ] Completar `JWT_SECRET` en `.env`
-- [ ] Completar `SONARQUBE_TOKEN` en `.env` (opcional)
+- [ ] Verificar `JWT_SECRET` en `.env`
+- [ ] Verificar `SONARQUBE_TOKEN` en `.env` (opcional)
 - [ ] `docker-compose up --build -d jenkins`
 - [ ] Esperar 60-90 segundos
 - [ ] Ejecutar `verify_pipeline.sh` o `.ps1`

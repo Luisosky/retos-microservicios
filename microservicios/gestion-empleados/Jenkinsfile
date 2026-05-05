@@ -20,13 +20,16 @@ pipeline {
   }
 
   parameters {
-    booleanParam(name: 'RUN_SONAR', defaultValue: false, description: 'Ejecutar análisis SonarQube')
+    booleanParam(name: 'RUN_SONAR', defaultValue: false, description: 'Ejecutar análisis SonarQube para Java')
+    booleanParam(name: 'ENABLE_GO_ANALYSIS', defaultValue: false, description: 'Ejecutar análisis SonarQube para Go')
+    string(name: 'GO_SERVICE_DIR', defaultValue: 'gestion-go', description: 'Ruta del microservicio Go a analizar')
   }
 
   environment {
-    // Recuperar JWT_SECRET desde Jenkins Credentials (tipo: Secret text)
-    // La credencial debe estar registrada en Jenkins como "jwt-secret-key"
+    // Credenciales compartidas por Jenkins y SonarQube
     JWT_SECRET = credentials('jwt-secret-key')
+    SONARQUBE_TOKEN = credentials('sonarqube-token')
+    SONAR_HOST_URL = 'http://sonarqube:9000'
     
     // Otras variables de entorno necesarias para las pruebas
     JWT_ISSUER = 'auth-service'
@@ -37,6 +40,9 @@ pipeline {
     JACOCO_REPORT_PATH = 'target/site/jacoco/jacoco.xml'
     SONAR_PROJECT_KEY = 'com.microservicios:gestion-empleados'
     SONAR_PROJECT_NAME = 'Gestion-Empleados'
+    GO_PROJECT_KEY = 'microservicios-go:reto5'
+    GO_COVERAGE_REPORT = 'coverage.out'
+    GO_TEST_REPORT = 'test-report.json'
   }
 
   stages {
@@ -116,22 +122,96 @@ pipeline {
       }
     }
 
-    stage('Analyze with SonarQube') {
+    stage('Analyze Java with SonarQube') {
       when {
         expression { params.RUN_SONAR == true }
       }
       steps {
         script {
-          echo "🔍 Ejecutando análisis SonarQube..."
-          sh '''
-            mvn sonar:sonar \
-              -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-              -Dsonar.projectName=${SONAR_PROJECT_NAME} \
-              -Dsonar.sources=src/main/java \
-              -Dsonar.tests=src/test/java \
-              -Dsonar.coverage.jacoco.xmlReportPaths=${JACOCO_REPORT_PATH} \
-              -q
-          '''
+          echo "🔍 Ejecutando análisis SonarQube para Java..."
+          withSonarQubeEnv('SonarQube') {
+            sh '''
+              mvn sonar:sonar \
+                -Dsonar.host.url=${SONAR_HOST_URL} \
+                -Dsonar.login=${SONARQUBE_TOKEN} \
+                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                -Dsonar.projectName=${SONAR_PROJECT_NAME} \
+                -Dsonar.sources=src/main/java \
+                -Dsonar.tests=src/test/java \
+                -Dsonar.coverage.jacoco.xmlReportPaths=${JACOCO_REPORT_PATH} \
+                -q
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Quality Gate - Java') {
+      when {
+        expression { params.RUN_SONAR == true }
+      }
+      steps {
+        timeout(time: 5, unit: 'MINUTES') {
+          script {
+            def gate = waitForQualityGate abortPipeline: true
+            echo "Quality Gate Java: ${gate.status}"
+          }
+        }
+      }
+    }
+
+    stage('Analyze Go with SonarQube') {
+      when {
+        expression { params.ENABLE_GO_ANALYSIS == true }
+      }
+      steps {
+        script {
+          echo "🔍 Preparando análisis SonarQube para Go..."
+          dir(params.GO_SERVICE_DIR) {
+            sh '''
+              if [ ! -f sonar-project.properties ]; then
+                echo "⚠ No se encontró sonar-project.properties"
+                exit 1
+              fi
+              if [ ! -f coverage.out ]; then
+                echo "⚠ No se encontró coverage.out"
+                echo "Sugerencia: go test ./... -coverprofile=coverage.out"
+                exit 1
+              fi
+              if [ ! -f test-report.json ]; then
+                echo "⚠ No se encontró test-report.json"
+                echo "Sugerencia: go test ./... -json > test-report.json"
+                exit 1
+              fi
+            '''
+            docker.image('sonarsource/sonar-scanner-cli:latest').inside('-v /var/run/docker.sock:/var/run/docker.sock') {
+              sh '''
+                sonar-scanner \
+                  -Dproject.settings=sonar-project.properties \
+                  -Dsonar.host.url=${SONAR_HOST_URL} \
+                  -Dsonar.login=${SONARQUBE_TOKEN} \
+                  -Dsonar.projectKey=${GO_PROJECT_KEY} \
+                  -Dsonar.go.coverage.reportPaths=${GO_COVERAGE_REPORT} \
+                  -Dsonar.go.tests.reportPaths=${GO_TEST_REPORT} \
+                  -Dsonar.qualitygate.wait=true \
+                  -Dsonar.qualitygate.timeout=300
+              '''
+            }
+          }
+        }
+      }
+    }
+
+    stage('Quality Gate - Go') {
+      when {
+        expression { params.ENABLE_GO_ANALYSIS == true }
+      }
+      steps {
+        timeout(time: 5, unit: 'MINUTES') {
+          script {
+            def gate = waitForQualityGate abortPipeline: true
+            echo "Quality Gate Go: ${gate.status}"
+          }
         }
       }
     }

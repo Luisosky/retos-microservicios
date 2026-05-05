@@ -176,7 +176,6 @@ microservicios/
 │   │     ├─ Prueba-Docker (Parte 1)
 │   │     └─ Empleados-Pipeline (Parte 2)
 │   │
-│   ├─ .env.example (NUEVO)
 │   ├─ README.md (Actualizado)
 │   ├─ CI_PIPELINE_PARTE2.md (NUEVO)
 │   ├─ verify_pipeline.sh (NUEVO)

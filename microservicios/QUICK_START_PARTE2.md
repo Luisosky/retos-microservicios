@@ -10,10 +10,8 @@ Pipeline CI completamente funcional para `gestion-empleados` que maneja JWT de f
 ### 1. Preparar el archivo .env
 
 ```bash
-# En la raíz del proyecto, copiar el ejemplo
-cp Jenkins/.env.example .env
-
-# Editar .env y completar valores seguros
+# En la raíz del proyecto, usar el .env existente
+# y completar/ajustar valores seguros si hace falta
 # JWT_SECRET=tu-clave-secreta-super-segura-32-caracteres-minimo
 # SONARQUBE_TOKEN=squ_xxxxxxxx
 ```

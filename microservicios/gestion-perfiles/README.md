@@ -50,7 +50,7 @@ Expone en el puerto **8083**.
 
 ## Variables de entorno
 
-Ver [.env.example](.env.example) para la lista completa.
+Ver el [.env](../.env) de la raíz del proyecto para la lista completa.
 
 ## Ejecución con Docker Compose
 

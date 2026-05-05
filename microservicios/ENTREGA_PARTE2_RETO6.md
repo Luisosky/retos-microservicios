@@ -100,13 +100,13 @@ jenkins:
 
 ---
 
-### 4️⃣ **Jenkins/.env.example** (Nuevo)
-**Tipo:** Plantilla de variables  
-**Propósito:** Guía de configuración segura
+### 4️⃣ **.env** (Raíz del proyecto)
+**Tipo:** Variables de entorno reales  
+**Propósito:** Fuente única para Jenkins y los microservicios
 
 ```env
-JWT_SECRET=tu-clave-super-secreta-con-minimo-32-caracteres
-SONARQUBE_TOKEN=squ_1234567890abcdef
+JWT_SECRET=XwnPlU5dQeNeIO9P+9IpnjqwUcW1P9bUpxMjsj7P9uk=
+SONARQUBE_TOKEN=squ_1234567890abcdef1234567890abcdef1234567
 ```
 
 ---
@@ -324,10 +324,10 @@ Servidor: Configurable en SonarQube UI
 ### Configuración Inicial (5 minutos)
 
 ```bash
-# 1. Copiar plantilla de env
-cp Jenkins/.env.example .env
+# 1. Verificar .env raíz
+# Asegúrate de que JWT_SECRET y SONARQUBE_TOKEN ya estén definidos
 
-# 2. Editar .env con valores reales
+# 2. Editar .env si necesitas ajustar valores
 nano .env  # o tu editor preferido
 
 # 3. Levantar Jenkins
@@ -381,7 +381,7 @@ curl -X POST http://localhost:9090/job/Empleados-Pipeline/build
 | Jenkinsfile | gestion-empleados/ | Pipeline principal |
 | casc.yaml | Jenkins/ | Configuración JCasC + credenciales |
 | docker-compose.yml | raíz | Infraestructura (actualizado) |
-| .env.example | Jenkins/ | Plantilla de secretos |
+| .env | Raíz | Variables reales de secretos |
 | CI_PIPELINE_PARTE2.md | Jenkins/ | Documentación completa |
 | QUICK_START_PARTE2.md | raíz | Inicio rápido |
 | verify_pipeline.sh | Jenkins/ | Validación (Bash) |
