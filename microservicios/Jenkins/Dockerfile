@@ -26,20 +26,25 @@ USER jenkins
 # sonar: Integración con SonarQube
 # job-dsl: DSL para crear jobs
 # pipeline-stage-view: Vista de etapas en pipelines
-RUN jenkins-plugin-cli --plugins \
-    workflow-aggregator:596.v8c21c963d92d \
-    docker-pipeline:563.vd602ce965163 \
-    git:5.2.2 \
-    configuration-as-code:1670.v564dc54bda7d \
-    sonar:2.14 \
-    job-dsl:1.87 \
-    pipeline-stage-view:2.31
+# Instalar plugins necesarios
+# Instalar plugins necesarios
 
-# Copiar archivo de configuración JCasC
+
+# Copiar archivo de configuración JCasC# Instalar plugins necesarios
+RUN jenkins-plugin-cli --plugins \
+    workflow-aggregator \
+    docker-workflow \
+    git \
+    configuration-as-code \
+    sonar \
+    job-dsl \
+    pipeline-stage-view \
+    role-strategy
+
 COPY casc.yaml /var/jenkins_home/casc.yaml
 
 # Establecer variables de entorno para JCasC
-ENV CASC_JENKINS_CONFIG=/var/jenkins_home/casc.yaml
+  ENV CASC_JENKINS_CONFIG=/var/jenkins_home/casc.yaml
 
 # Exponer puertos
 # 8080: interfaz web de Jenkins

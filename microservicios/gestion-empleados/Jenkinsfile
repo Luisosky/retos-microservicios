@@ -216,22 +216,47 @@ pipeline {
       }
     }
 
-    stage('Build Docker Image') {
+    stage('Package') {
       steps {
         script {
           echo "🐳 Construyendo imagen Docker..."
-          sh '''
-            # Empaquetar aplicación
-            mvn package -DskipTests -q
-            
-            # Verificar artefacto generado
-            if [ -f target/*.jar ]; then
-              echo "✓ Artefacto JAR generado"
-              ls -lh target/*.jar
-            else
-              echo "⚠ No se encontró archivo JAR"
-            fi
-          '''
+          // 1. Empaquetar la aplicación en un JAR
+          sh 'mvn package -DskipTests -q'
+          
+          // 2. Construir la imagen de Docker real
+          def imageName = "empleados-service"
+          def imageTag = "${env.BUILD_NUMBER}"
+          
+          // Construye y etiqueta la imagen con el número de build y latest
+          sh "docker build -t ${imageName}:${imageTag} -t ${imageName}:latest ."
+          echo "✅ Imagen construida: ${imageName}:${imageTag}"
+        }
+      }
+    }
+
+    stage('E2E Tests') {
+      steps {
+        script {
+          echo "🚀 Levantando el sistema completo para pruebas..."
+          // Levanta los servicios en segundo plano
+          sh 'docker compose -f docker-compose.yml up -d'
+          
+          echo "⏳ Esperando 30 segundos a que los servicios estén listos..."
+          sleep 30 // Tiempo para que la base de datos y la API arranquen
+          
+          echo "🧪 Ejecutando suite BDD en Go..."
+          dir('e2e-tests') {
+            // Usamos un contenedor temporal de Go para correr tus pruebas
+            // sin necesidad de instalar Go directamente en Jenkins
+            sh '''
+            docker run --rm \
+              -v $(pwd):/app \
+              -w /app \
+              --network microservices-network \
+              golang:1.26 \
+              go test ./step_definitions -v
+            '''
+          }
         }
       }
     }
@@ -240,6 +265,11 @@ pipeline {
   post {
     always {
       script {
+
+        echo " Apagando el sistema y limpiando contenedores..."
+  
+        sh 'docker compose -f docker-compose.yml down -v || true'
+
         echo "📋 Recopilando reportes..."
         
         // Archivar reportes de prueba
