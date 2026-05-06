@@ -159,6 +159,11 @@
                 <version>3.1.2</version>
                 <configuration>
                     <argLine>${surefireArgLine}</argLine>
+                    <!-- Excluir tests de integración en verificaciones regulares -->
+                    <excludes>
+                        <exclude>**/*IntegrationTest.java</exclude>
+                        <exclude>**/*SystemTest.java</exclude>
+                    </excludes>
                 </configuration>
             </plugin>
         </plugins>
