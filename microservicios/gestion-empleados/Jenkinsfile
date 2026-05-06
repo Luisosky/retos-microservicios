@@ -59,7 +59,9 @@ pipeline {
             ).trim()
 
             echo "Cobertura JaCoCo: ${coverage}%"
-            if (coverage.toBigDecimal() < env.MIN_COVERAGE.toBigDecimal()) {
+            def coverageValue = new BigDecimal(coverage)
+            def minimumCoverage = new BigDecimal(env.MIN_COVERAGE)
+            if (coverageValue < minimumCoverage) {
               error("Cobertura insuficiente: ${coverage}% < ${env.MIN_COVERAGE}%")
             }
           }
