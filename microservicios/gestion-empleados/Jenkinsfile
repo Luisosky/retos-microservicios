@@ -34,8 +34,8 @@ pipeline {
       steps {
         dir("${APP_DIR}") {
           sh '''
-            mvn clean org.jacoco:jacoco-maven-plugin:prepare-agent verify org.jacoco:jacoco-maven-plugin:report \
-              -DskipTests=false -DskipITs
+            mvn -P ci clean org.jacoco:jacoco-maven-plugin:prepare-agent verify org.jacoco:jacoco-maven-plugin:report \
+              -DskipTests=false
           '''
         }
       }
