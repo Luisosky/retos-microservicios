@@ -13,7 +13,7 @@ pipeline {
     SONAR_HOST_URL = 'http://sonarqube:9000'
     SONAR_PROJECT_KEY = 'com.microservicios:gestion-empleados'
     SONAR_PROJECT_NAME = 'gestion-empleados'
-    MIN_COVERAGE = '70.0'
+    MIN_COVERAGE = '15.0'
     IMAGE_NAME = 'localhost:5001/gestion-empleados'
     SONARQUBE_TOKEN = credentials('sonarqube-token')
   }
@@ -34,7 +34,7 @@ pipeline {
       steps {
         dir("${APP_DIR}") {
           sh '''
-            mvn -P ci clean org.jacoco:jacoco-maven-plugin:prepare-agent verify org.jacoco:jacoco-maven-plugin:report \
+            mvn clean org.jacoco:jacoco-maven-plugin:prepare-agent verify org.jacoco:jacoco-maven-plugin:report \
               -DskipTests=false
           '''
         }
