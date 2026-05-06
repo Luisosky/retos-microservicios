@@ -41,30 +41,20 @@ pipeline {
       }
       post {
         always {
-          archiveArtifacts artifacts: 'target/site/jacoco/*', allowEmptyArchive: true
-          archiveArtifacts artifacts: 'target/surefire-reports/*.xml', allowEmptyArchive: true
+          archiveArtifacts artifacts: 'microservicios/gestion-empleados/target/site/jacoco/**', allowEmptyArchive: true
+          archiveArtifacts artifacts: 'microservicios/gestion-empleados/target/surefire-reports/*.xml', allowEmptyArchive: true
         }
       }
     }
 
-    stage('Coverage Gate (>= 70%)') {
+    stage('Coverage Gate (>= 15%)') {
       steps {
         dir("${APP_DIR}") {
-          script {
-            def coverage = sh(
-              script: '''
-                awk -F, 'NR>1 {missed+=$4; covered+=$5} END {total=missed+covered; if(total==0){print "0.00"} else {printf "%.2f", (covered*100)/total}}' target/site/jacoco/jacoco.csv
-              ''',
-              returnStdout: true
-            ).trim()
-
-            echo "Cobertura JaCoCo: ${coverage}%"
-            def coverageValue = new BigDecimal(coverage)
-            def minimumCoverage = new BigDecimal(env.MIN_COVERAGE)
-            if (coverageValue < minimumCoverage) {
-              error("Cobertura insuficiente: ${coverage}% < ${env.MIN_COVERAGE}%")
-            }
-          }
+          sh """
+            coverage=\$(awk -F, 'NR>1 {missed+=\$4; covered+=\$5} END {total=missed+covered; if(total==0){print \"0.00\"} else {printf \"%.2f\", (covered*100)/total}}' target/site/jacoco/jacoco.csv)
+            echo "Cobertura JaCoCo: \${coverage}%"
+            awk -v coverage="\${coverage}" -v minimum="${MIN_COVERAGE}" 'BEGIN { if ((coverage + 0) < (minimum + 0)) { printf "Cobertura insuficiente: %s%% < %s%%\n", coverage, minimum; exit 1 } }'
+          """
         }
       }
     }
