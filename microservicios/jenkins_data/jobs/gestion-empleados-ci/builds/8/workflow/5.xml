@@ -1,0 +1,41 @@
+<?xml version='1.1' encoding='UTF-8'?>
+<Tag plugin="workflow-support@1015.v785e5a_b_b_8b_22">
+  <node class="cps.n.StepStartNode" plugin="workflow-cps@4315.va_e456c4e7f4f">
+    <parentIds>
+      <string>4</string>
+    </parentIds>
+    <id>5</id>
+    <descriptorId>org.jenkinsci.plugins.credentialsbinding.impl.BindingStep</descriptorId>
+  </node>
+  <actions>
+    <s.a.LogStorageAction/>
+    <cps.a.ArgumentsActionImpl plugin="workflow-cps@4315.va_e456c4e7f4f">
+      <arguments>
+        <entry>
+          <string>bindings</string>
+          <list>
+            <linked-hash-map>
+              <entry>
+                <string>$class</string>
+                <string>org.jenkinsci.plugins.credentialsbinding.impl.StringBinding</string>
+              </entry>
+              <entry>
+                <string>variable</string>
+                <string>SONARQUBE_TOKEN</string>
+              </entry>
+              <entry>
+                <string>credentialsId</string>
+                <string>sonarqube-token</string>
+              </entry>
+            </linked-hash-map>
+          </list>
+        </entry>
+      </arguments>
+      <sensitiveVariables/>
+      <isUnmodifiedBySanitization>true</isUnmodifiedBySanitization>
+    </cps.a.ArgumentsActionImpl>
+    <wf.a.TimingAction plugin="workflow-api@1413.v2ff1a_5e720fa_">
+      <startTime>1778045136748</startTime>
+    </wf.a.TimingAction>
+  </actions>
+</Tag>

@@ -239,13 +239,13 @@ services:
       # Configuración de JCasC
       CASC_JENKINS_CONFIG: /var/jenkins_home/casc.yaml
       # Java options para mejor rendimiento
-      JAVA_OPTS: "-Djenkins.install.runSetupWizard=false -Xmx1g -Xms512m"
+      JAVA_OPTS: "-Djenkins.install.runSetupWizard=false -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true -Xmx1g -Xms512m"
       # Credenciales y conexión SonarQube
       JWT_SECRET: ${JWT_SECRET:-SuperSecretKeyWithMoreThan32CharactersForJWTTokenSigning}
       SONARQUBE_TOKEN: ${SONARQUBE_TOKEN:-default-sonarqube-token}
       SONAR_HOST_URL: http://sonarqube:9000
       GIT_REPO_URL: ${GIT_REPO_URL:-file:///workspace/repo}
-      GIT_BRANCH: ${GIT_BRANCH:-*/main}
+      GIT_BRANCH: ${GIT_BRANCH:-reto6}
     networks:
       - microservices-net
     ports:
@@ -284,7 +284,7 @@ services:
     networks:
       - microservices-net
     ports:
-      - "${REGISTRY_PORT:-5000}:5000"
+      - "${REGISTRY_PORT:-5001}:5000"
     volumes:
       - registry_data:/var/lib/registry
     restart: unless-stopped

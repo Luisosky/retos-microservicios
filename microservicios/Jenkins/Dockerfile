@@ -14,6 +14,10 @@ RUN apt-get update && apt-get install -y \
   golang-go \
     && rm -rf /var/lib/apt/lists/*
 
+# Marcar el workspace montado como seguro para Git 2.35+
+RUN git config --system --add safe.directory /workspace/repo \
+    && git config --system --add safe.directory /workspace/repo/.git
+
 # Agregar usuario jenkins al grupo docker para acceso al socket
 RUN groupadd -f docker && usermod -aG docker jenkins
 

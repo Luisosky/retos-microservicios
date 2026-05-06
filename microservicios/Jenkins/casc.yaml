@@ -42,22 +42,14 @@ unclassified:
 
 jobs:
   - script: |
-      def repoUrl = System.getenv('GIT_REPO_URL') ?: 'file:///workspace/repo'
+      def pipelineScript = new File('/workspace/repo/microservicios/gestion-empleados/Jenkinsfile').text
 
       pipelineJob('gestion-empleados-ci') {
         description('Pipeline CI declarativo: build, SonarQube, package Docker y E2E BDD (Reto 6).')
         definition {
-          cpsScm {
-            scm {
-              git {
-                remote {
-                  url(repoUrl)
-                }
-                branches('*/main')
-              }
-            }
-            scriptPath('microservicios/gestion-empleados/Jenkinsfile')
-            lightweight(true)
+          cps {
+            script(pipelineScript)
+            sandbox(true)
           }
         }
       }

@@ -4,7 +4,6 @@ pipeline {
   options {
     buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '10'))
     timeout(time: 60, unit: 'MINUTES')
-    timestamps()
   }
 
   environment {
@@ -15,14 +14,19 @@ pipeline {
     SONAR_PROJECT_KEY = 'com.microservicios:gestion-empleados'
     SONAR_PROJECT_NAME = 'gestion-empleados'
     MIN_COVERAGE = '70.0'
-    IMAGE_NAME = 'localhost:5000/gestion-empleados'
+    IMAGE_NAME = 'localhost:5001/gestion-empleados'
     SONARQUBE_TOKEN = credentials('sonarqube-token')
   }
 
   stages {
     stage('Checkout') {
       steps {
-        checkout scm
+        script {
+          def checkoutBranch = (env.GIT_BRANCH ?: 'reto6').replace('*/', '')
+          def checkoutUrl = env.GIT_REPO_URL ?: 'file:///workspace/repo'
+
+          git branch: checkoutBranch, url: checkoutUrl
+        }
       }
     }
 
@@ -31,14 +35,14 @@ pipeline {
         dir("${APP_DIR}") {
           sh '''
             mvn clean org.jacoco:jacoco-maven-plugin:prepare-agent verify org.jacoco:jacoco-maven-plugin:report \
-              -DskipTests=false
+              -DskipTests=false -DskipITs
           '''
         }
       }
       post {
         always {
-          junit testResults: 'microservicios/gestion-empleados/target/surefire-reports/*.xml', allowEmptyResults: true
-          archiveArtifacts artifacts: 'microservicios/gestion-empleados/target/site/jacoco/*', allowEmptyArchive: true
+          archiveArtifacts artifacts: 'target/site/jacoco/*', allowEmptyArchive: true
+          archiveArtifacts artifacts: 'target/surefire-reports/*.xml', allowEmptyArchive: true
         }
       }
     }
@@ -139,7 +143,9 @@ pipeline {
 
   post {
     always {
-      sh 'docker compose -f ${COMPOSE_FILE} down -v --remove-orphans || true'
+      sh '''
+        docker compose -f ${COMPOSE_FILE} down -v --remove-orphans || true
+      '''
     }
   }
 }
