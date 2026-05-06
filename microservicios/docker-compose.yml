@@ -235,15 +235,17 @@ services:
     container_name: jenkins-server
     environment:
       # Desactivar setup wizard para usar JCasC
-      JENKINS_OPTS: "-Djenkins.install.runSetupWizard=false"
+      JENKINS_OPTS: ""
       # Configuración de JCasC
       CASC_JENKINS_CONFIG: /var/jenkins_home/casc.yaml
       # Java options para mejor rendimiento
-      JAVA_OPTS: "-Xmx1g -Xms512m"
+      JAVA_OPTS: "-Djenkins.install.runSetupWizard=false -Xmx1g -Xms512m"
       # Credenciales y conexión SonarQube
       JWT_SECRET: ${JWT_SECRET:-SuperSecretKeyWithMoreThan32CharactersForJWTTokenSigning}
       SONARQUBE_TOKEN: ${SONARQUBE_TOKEN:-default-sonarqube-token}
       SONAR_HOST_URL: http://sonarqube:9000
+      GIT_REPO_URL: ${GIT_REPO_URL:-file:///workspace/repo}
+      GIT_BRANCH: ${GIT_BRANCH:-*/main}
     networks:
       - microservices-net
     ports:
@@ -251,19 +253,40 @@ services:
       - "50000:50000"      # Puerto para agentes Jenkins
     volumes:
       # Persistencia de datos de Jenkins
-      - jenkins_data:/var/jenkins_home
+      - ./jenkins_data:/var/jenkins_home
+      # Archivo JCasC montado explicitamente para evitar perdida por bind mount de jenkins_home
+      - ./Jenkins/casc.yaml:/var/jenkins_home/casc.yaml:ro
       # Acceso al socket de Docker del host
       - /var/run/docker.sock:/var/run/docker.sock
+      # Repositorio del proyecto para pipeline job creado por JCasC
+      - ../:/workspace/repo:ro
     depends_on:
-      - redis
-      - rabbitmq
-      - sonarqube
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      sonarqube:
+        condition: service_started
+      registry:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 60s
+    restart: unless-stopped
+
+  # Registry local opcional para almacenar imagenes de build
+  registry:
+    image: registry:2
+    container_name: local-registry
+    networks:
+      - microservices-net
+    ports:
+      - "${REGISTRY_PORT:-5000}:5000"
+    volumes:
+      - registry_data:/var/lib/registry
     restart: unless-stopped
 
   # SonarQube para análisis estático multi-lenguaje
@@ -324,8 +347,6 @@ networks:
 # Volúmenes de persistencia
 # =========================
 volumes:
-  jenkins_data:
-    driver: local
   redis_data:
     driver: local
   rabbitmq_data:
@@ -337,4 +358,6 @@ volumes:
   sonarqube_logs:
     driver: local
   sonarqube_db_data:
+    driver: local
+  registry_data:
     driver: local

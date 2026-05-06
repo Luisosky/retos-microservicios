@@ -6,14 +6,16 @@ USER root
 
 # Actualizar packages e instalar Docker CLI
 RUN apt-get update && apt-get install -y \
-    docker.io \
-    git \
-    curl \
-    wget \
+  docker.io \
+  git \
+  curl \
+  wget \
+  maven \
+  golang-go \
     && rm -rf /var/lib/apt/lists/*
 
 # Agregar usuario jenkins al grupo docker para acceso al socket
-RUN usermod -aG docker jenkins
+RUN groupadd -f docker && usermod -aG docker jenkins
 
 # Cambiar de vuelta a usuario jenkins
 USER jenkins
@@ -44,7 +46,7 @@ RUN jenkins-plugin-cli --plugins \
 COPY casc.yaml /var/jenkins_home/casc.yaml
 
 # Establecer variables de entorno para JCasC
-  ENV CASC_JENKINS_CONFIG=/var/jenkins_home/casc.yaml
+ENV CASC_JENKINS_CONFIG=/var/jenkins_home/casc.yaml
 
 # Exponer puertos
 # 8080: interfaz web de Jenkins

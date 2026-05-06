@@ -1,262 +1,137 @@
-// Pipeline CI para Microservicio Gestión de Empleados
-// Incluye: Build, Test con JWT, SonarQube, Notificaciones
-
 pipeline {
-  agent {
-    docker {
-      image 'maven:3.9-eclipse-temurin-17'
-      args '-v /var/run/docker.sock:/var/run/docker.sock -v maven-cache:/root/.m2'
-      reuseNode true
-    }
-  }
+  agent any
 
   options {
-    // Mantener últimos 30 builds
-    buildDiscarder(logRotator(numToKeepStr: '30', artifactNumToKeepStr: '5'))
-    // Timeout de 30 minutos
-    timeout(time: 30, unit: 'MINUTES')
-    // Timestamps en los logs
+    buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '10'))
+    timeout(time: 60, unit: 'MINUTES')
     timestamps()
   }
 
-  parameters {
-    booleanParam(name: 'RUN_SONAR', defaultValue: false, description: 'Ejecutar análisis SonarQube para Java')
-    booleanParam(name: 'ENABLE_GO_ANALYSIS', defaultValue: false, description: 'Ejecutar análisis SonarQube para Go')
-    string(name: 'GO_SERVICE_DIR', defaultValue: 'gestion-go', description: 'Ruta del microservicio Go a analizar')
-  }
-
   environment {
-    // Credenciales compartidas por Jenkins y SonarQube
-    JWT_SECRET = credentials('jwt-secret-key')
-    SONARQUBE_TOKEN = credentials('sonarqube-token')
+    APP_DIR = 'microservicios/gestion-empleados'
+    E2E_DIR = 'e2e-tests'
+    COMPOSE_FILE = 'microservicios/docker-compose.yml'
     SONAR_HOST_URL = 'http://sonarqube:9000'
-    
-    // Otras variables de entorno necesarias para las pruebas
-    JWT_ISSUER = 'auth-service'
-    JWT_AUDIENCE = 'microservices-clients'
-    JWT_EXPIRATION_MINUTES = '60'
-    
-    // Variables para reportes
-    JACOCO_REPORT_PATH = 'target/site/jacoco/jacoco.xml'
     SONAR_PROJECT_KEY = 'com.microservicios:gestion-empleados'
-    SONAR_PROJECT_NAME = 'Gestion-Empleados'
-    GO_PROJECT_KEY = 'microservicios-go:reto5'
-    GO_COVERAGE_REPORT = 'coverage.out'
-    GO_TEST_REPORT = 'test-report.json'
+    SONAR_PROJECT_NAME = 'gestion-empleados'
+    MIN_COVERAGE = '70.0'
+    IMAGE_NAME = 'localhost:5000/gestion-empleados'
+    SONARQUBE_TOKEN = credentials('sonarqube-token')
   }
 
   stages {
     stage('Checkout') {
       steps {
-        script {
-          echo "📦 Clonando repositorio..."
-          // Si ejecutas desde un repositorio Git, descomenta:
-          // checkout scm
-          
-          // Para desarrollo local, simplemente mostrar estructura
-          sh 'ls -la'
-        }
+        checkout scm
       }
     }
 
-    stage('Build') {
+    stage('Build & Test') {
       steps {
-        script {
-          echo "🔨 Compilando con Maven..."
+        dir("${APP_DIR}") {
           sh '''
-            mvn clean compile \
-              -DskipTests \
-              -Duser.timezone=America/Mexico_City \
-              -Dfile.encoding=UTF-8 \
-              -q
+            mvn clean org.jacoco:jacoco-maven-plugin:prepare-agent verify org.jacoco:jacoco-maven-plugin:report \
+              -DskipTests=false
           '''
         }
       }
-    }
-
-    stage('Test') {
-      steps {
-        script {
-          echo "🧪 Ejecutando pruebas unitarias e integración..."
-          sh '''
-            # Mostrar variables de entorno (sin exponer la clave)
-            echo "================================"
-            echo "Configuración de JWT:"
-            echo "JWT_ISSUER: ${JWT_ISSUER}"
-            echo "JWT_AUDIENCE: ${JWT_AUDIENCE}"
-            echo "JWT_EXPIRATION: ${JWT_EXPIRATION_MINUTES} minutos"
-            echo "JWT_SECRET_CONFIGURED: $([ -n "$JWT_SECRET" ] && echo 'SI' || echo 'NO')"
-            echo "================================"
-            
-            # Ejecutar tests con cobertura JaCoCo
-            mvn test \
-              -Duser.timezone=America/Mexico_City \
-              -Dfile.encoding=UTF-8 \
-              -DargLine="-Xmx1024m" \
-              org.jacoco:jacoco-maven-plugin:prepare-agent \
-              org.jacoco:jacoco-maven-plugin:report \
-              -q
-          '''
+      post {
+        always {
+          junit testResults: 'microservicios/gestion-empleados/target/surefire-reports/*.xml', allowEmptyResults: true
+          archiveArtifacts artifacts: 'microservicios/gestion-empleados/target/site/jacoco/*', allowEmptyArchive: true
         }
       }
     }
 
-    stage('Code Coverage') {
+    stage('Coverage Gate (>= 70%)') {
       steps {
-        script {
-          echo "📊 Verificando cobertura de código..."
-          sh '''
-            # Generar reporte JaCoCo en XML para SonarQube
-            mvn org.jacoco:jacoco-maven-plugin:report \
-              -q
-            
-            # Mostrar resumen de cobertura
-            if [ -f target/site/jacoco/jacoco.xml ]; then
-              echo "✓ Reporte JaCoCo generado exitosamente"
-              echo "Ruta: ${JACOCO_REPORT_PATH}"
-            else
-              echo "⚠ Advertencia: Reporte JaCoCo no encontrado"
-            fi
-          '''
-        }
-      }
-    }
-
-    stage('Analyze Java with SonarQube') {
-      when {
-        expression { params.RUN_SONAR == true }
-      }
-      steps {
-        script {
-          echo "🔍 Ejecutando análisis SonarQube para Java..."
-          withSonarQubeEnv('SonarQube') {
-            sh '''
-              mvn sonar:sonar \
-                -Dsonar.host.url=${SONAR_HOST_URL} \
-                -Dsonar.login=${SONARQUBE_TOKEN} \
-                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                -Dsonar.projectName=${SONAR_PROJECT_NAME} \
-                -Dsonar.sources=src/main/java \
-                -Dsonar.tests=src/test/java \
-                -Dsonar.coverage.jacoco.xmlReportPaths=${JACOCO_REPORT_PATH} \
-                -q
-            '''
-          }
-        }
-      }
-    }
-
-    stage('Quality Gate - Java') {
-      when {
-        expression { params.RUN_SONAR == true }
-      }
-      steps {
-        timeout(time: 5, unit: 'MINUTES') {
+        dir("${APP_DIR}") {
           script {
-            def gate = waitForQualityGate abortPipeline: true
-            echo "Quality Gate Java: ${gate.status}"
-          }
-        }
-      }
-    }
+            def coverage = sh(
+              script: '''
+                awk -F, 'NR>1 {missed+=$4; covered+=$5} END {total=missed+covered; if(total==0){print "0.00"} else {printf "%.2f", (covered*100)/total}}' target/site/jacoco/jacoco.csv
+              ''',
+              returnStdout: true
+            ).trim()
 
-    stage('Analyze Go with SonarQube') {
-      when {
-        expression { params.ENABLE_GO_ANALYSIS == true }
-      }
-      steps {
-        script {
-          echo "🔍 Preparando análisis SonarQube para Go..."
-          dir(params.GO_SERVICE_DIR) {
-            sh '''
-              if [ ! -f sonar-project.properties ]; then
-                echo "⚠ No se encontró sonar-project.properties"
-                exit 1
-              fi
-              if [ ! -f coverage.out ]; then
-                echo "⚠ No se encontró coverage.out"
-                echo "Sugerencia: go test ./... -coverprofile=coverage.out"
-                exit 1
-              fi
-              if [ ! -f test-report.json ]; then
-                echo "⚠ No se encontró test-report.json"
-                echo "Sugerencia: go test ./... -json > test-report.json"
-                exit 1
-              fi
-            '''
-            docker.image('sonarsource/sonar-scanner-cli:latest').inside('-v /var/run/docker.sock:/var/run/docker.sock') {
-              sh '''
-                sonar-scanner \
-                  -Dproject.settings=sonar-project.properties \
-                  -Dsonar.host.url=${SONAR_HOST_URL} \
-                  -Dsonar.login=${SONARQUBE_TOKEN} \
-                  -Dsonar.projectKey=${GO_PROJECT_KEY} \
-                  -Dsonar.go.coverage.reportPaths=${GO_COVERAGE_REPORT} \
-                  -Dsonar.go.tests.reportPaths=${GO_TEST_REPORT} \
-                  -Dsonar.qualitygate.wait=true \
-                  -Dsonar.qualitygate.timeout=300
-              '''
+            echo "Cobertura JaCoCo: ${coverage}%"
+            if (coverage.toBigDecimal() < env.MIN_COVERAGE.toBigDecimal()) {
+              error("Cobertura insuficiente: ${coverage}% < ${env.MIN_COVERAGE}%")
             }
           }
         }
       }
     }
 
-    stage('Quality Gate - Go') {
-      when {
-        expression { params.ENABLE_GO_ANALYSIS == true }
-      }
+    stage('SonarQube Analysis') {
       steps {
-        timeout(time: 5, unit: 'MINUTES') {
-          script {
-            def gate = waitForQualityGate abortPipeline: true
-            echo "Quality Gate Go: ${gate.status}"
+        dir("${APP_DIR}") {
+          withSonarQubeEnv('SonarQube') {
+            sh '''
+              mvn sonar:sonar \
+                -Dsonar.host.url=${SONAR_HOST_URL} \
+                -Dsonar.token=${SONARQUBE_TOKEN} \
+                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                -Dsonar.projectName=${SONAR_PROJECT_NAME} \
+                -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+            '''
           }
+        }
+      }
+    }
+
+    stage('Quality Gate') {
+      steps {
+        timeout(time: 10, unit: 'MINUTES') {
+          waitForQualityGate abortPipeline: true
         }
       }
     }
 
     stage('Package') {
       steps {
-        script {
-          echo "🐳 Construyendo imagen Docker..."
-          // 1. Empaquetar la aplicación en un JAR
-          sh 'mvn package -DskipTests -q'
-          
-          // 2. Construir la imagen de Docker real
-          def imageName = "empleados-service"
-          def imageTag = "${env.BUILD_NUMBER}"
-          
-          // Construye y etiqueta la imagen con el número de build y latest
-          sh "docker build -t ${imageName}:${imageTag} -t ${imageName}:latest ."
-          echo "✅ Imagen construida: ${imageName}:${imageTag}"
+        dir("${APP_DIR}") {
+          sh '''
+            docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} -t ${IMAGE_NAME}:latest .
+            if docker ps --format '{{.Names}}' | grep -q '^local-registry$'; then
+              docker push ${IMAGE_NAME}:${BUILD_NUMBER}
+              docker push ${IMAGE_NAME}:latest
+            else
+              echo "Registry local no disponible. Se omite push."
+            fi
+          '''
         }
       }
     }
 
     stage('E2E Tests') {
       steps {
-        script {
-          echo "🚀 Levantando el sistema completo para pruebas..."
-          // Levanta los servicios en segundo plano
-          sh 'docker compose -f docker-compose.yml up -d'
-          
-          echo "⏳ Esperando 30 segundos a que los servicios estén listos..."
-          sleep 30 // Tiempo para que la base de datos y la API arranquen
-          
-          echo "🧪 Ejecutando suite BDD en Go..."
-          dir('e2e-tests') {
-            // Usamos un contenedor temporal de Go para correr tus pruebas
-            // sin necesidad de instalar Go directamente en Jenkins
-            sh '''
-            docker run --rm \
-              -v $(pwd):/app \
-              -w /app \
-              --network microservices-network \
-              golang:1.26 \
-              go test ./step_definitions -v
-            '''
-          }
+        sh '''
+          docker compose -f ${COMPOSE_FILE} up -d --build
+
+          for url in \
+            http://localhost:8080/v3/api-docs \
+            http://localhost:8081/docs \
+            http://localhost:8084/health; do
+            echo "Esperando servicio en ${url}"
+            ok=0
+            for i in $(seq 1 30); do
+              if curl -fsS "$url" >/dev/null; then
+                ok=1
+                echo "Servicio listo: ${url}"
+                break
+              fi
+              sleep 10
+            done
+            if [ "$ok" -ne 1 ]; then
+              echo "Timeout esperando ${url}"
+              exit 1
+            fi
+          done
+        '''
+
+        dir("${E2E_DIR}") {
+          sh 'go test ./step_definitions -v'
         }
       }
     }
@@ -264,87 +139,7 @@ pipeline {
 
   post {
     always {
-      script {
-
-        echo " Apagando el sistema y limpiando contenedores..."
-  
-        sh 'docker compose -f docker-compose.yml down -v || true'
-
-        echo "📋 Recopilando reportes..."
-        
-        // Archivar reportes de prueba
-        junit testResults: 'target/surefire-reports/*.xml', 
-              allowEmptyResults: true,
-              skipPublishingChecks: true
-        
-        // Archivar reporte JaCoCo
-        publishHTML target: [
-          reportDir: 'target/site/jacoco',
-          reportFiles: 'index.html',
-          reportName: 'JaCoCo Coverage Report',
-          alwaysLinkToLastBuild: true,
-          keepAll: true
-        ]
-      }
-    }
-
-    success {
-      script {
-        echo "✅ Pipeline completado exitosamente"
-        echo """
-        ================================
-        📊 RESUMEN DEL BUILD
-        ================================
-        Estado: SUCCESS
-        Proyecto: Gestion-Empleados
-        Build: #${BUILD_NUMBER}
-        Duración: ${currentBuild.durationString}
-        
-        📝 Logs: ${BUILD_URL}console
-        📈 Reportes: ${BUILD_URL}artifact/
-        ================================
-        """
-      }
-    }
-
-    unstable {
-      script {
-        echo "⚠️  Pipeline completado con advertencias"
-      }
-    }
-
-    failure {
-      script {
-        echo """
-        ❌ Pipeline FALLIDO
-        ================================
-        Proyecto: Gestion-Empleados
-        Build: #${BUILD_NUMBER}
-        
-        🔍 Ver detalles: ${BUILD_URL}console
-        ================================
-        """
-      }
-    }
-
-    aborted {
-      script {
-        echo "🛑 Pipeline fue cancelado"
-      }
-    }
-
-    cleanup {
-      script {
-        echo "🧹 Limpiando espacios de trabajo..."
-        // Los volúmenes de Maven se mantienen en cache
-        cleanWs(
-          deleteDirs: true,
-          patterns: [
-            [pattern: 'target/**', type: 'INCLUDE'],
-            [pattern: '.sonar/**', type: 'INCLUDE']
-          ]
-        )
-      }
+      sh 'docker compose -f ${COMPOSE_FILE} down -v --remove-orphans || true'
     }
   }
 }
