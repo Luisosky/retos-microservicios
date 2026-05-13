@@ -261,11 +261,17 @@ services:
       GF_PATHS_PROVISIONING: /etc/grafana/provisioning
       GF_LOG_LEVEL: info
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # Discord Webhook para notificaciones
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK:-https://discord.com/api/webhooks/1503990538926428231/apQdq-TJOeg2I06hgQ0js2uRhPp3vq-IqKKBQ81Ukoje-X4X130lhhAIDy8HBtqnt6n0}
+      # Configuración de alertas
+      GF_UNIFIED_ALERTING_ENABLED: "true"
+      GF_ALERTING_ENABLED: "false"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./observability/grafana-datasources.json:/etc/grafana/provisioning/datasources/datasources.json:ro
       - ./observability/grafana-dashboards-provider.json:/etc/grafana/provisioning/dashboards/dashboards.json:ro
       - ./observability/dashboards:/etc/grafana/provisioning/dashboards/custom:ro
+      - ./observability/grafana-notifiers.json:/etc/grafana/provisioning/notifiers/notifiers.json:ro
     networks:
       - microservices-net
     ports:
