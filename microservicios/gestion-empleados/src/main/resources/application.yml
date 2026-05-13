@@ -41,6 +41,63 @@ logging:
   level:
     com.microservicios.empleados: INFO
     org.springframework.data.mongodb: INFO
+    io.opentelemetry: INFO
+  # Structured JSON logging with traceId
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+# ============================================
+# Actuator Configuration - Health & Metrics
+# ============================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,metrics,prometheus,info,env"
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+      probes:
+        enabled: true
+    info:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      slo:
+        http.server.requests: "50ms,100ms,200ms,500ms,1000ms,2000ms,5000ms"
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+
+# ============================================
+# OpenTelemetry Configuration
+# ============================================
+otel:
+  sdk:
+    disabled: false
+  exporter:
+    otlp:
+      enabled: true
+      protocol: http/protobuf
+      endpoint: http://zipkin:9411  # Zipkin HTTP collector
+  traces:
+    sampler: always_on  # Change to parentbased_probabilistic in production
+  service:
+    name: gestion-empleados
+    version: 1.0.0
+  resource:
+    attributes:
+      service.namespace: microservicios
+      deployment.environment: development
 
 # Configuración de Springdoc OpenAPI (Swagger)
 springdoc:
@@ -55,5 +112,5 @@ springdoc:
     theme: light
   api-docs:
     path: /v3/api-docs
-  show-actuator: false
+  show-actuator: true
 

@@ -1,0 +1,104 @@
+# Prometheus Configuration for Microservices Observability
+# ============================================================
+
+global:
+  scrape_interval: 15s      # How often to scrape targets
+  evaluation_interval: 15s  # How often to evaluate rules
+  external_labels:
+    monitor: 'microservices-monitor'
+
+# Alertmanager configuration (optional for this phase)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+# Load rules once and periodically evaluate them
+rule_files: []
+
+# Scrape configurations
+scrape_configs:
+  # ==========================================
+  # Prometheus Self-Monitoring
+  # ==========================================
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # ==========================================
+  # Microservices Metrics
+  # ==========================================
+  
+  # Empleados Service (Java/Spring Boot)
+  - job_name: 'empleados-service'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['empleados-service:8080']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - target_label: service
+        replacement: 'empleados'
+
+  # Departamentos Service (Python/FastAPI)
+  - job_name: 'departamentos-service'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['departamentos:8081']
+    relabel_configs:
+      - target_label: service
+        replacement: 'departamentos'
+
+  # Notificaciones Service
+  - job_name: 'notificaciones-service'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['notificaciones:8082']
+    relabel_configs:
+      - target_label: service
+        replacement: 'notificaciones'
+
+  # Autenticación Service (C#/.NET)
+  - job_name: 'autenticacion-service'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['autenticacion:8084']
+    relabel_configs:
+      - target_label: service
+        replacement: 'autenticacion'
+
+  # Perfiles Service (PHP/Laravel)
+  - job_name: 'perfiles-service'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['perfiles:8083']
+    relabel_configs:
+      - target_label: service
+        replacement: 'perfiles'
+
+  # ==========================================
+  # Infrastructure Services
+  # ==========================================
+
+  # Redis Cache
+  - job_name: 'redis'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['redis-cache:6379']
+    relabel_configs:
+      - target_label: service
+        replacement: 'redis'
+
+  # RabbitMQ Management API
+  - job_name: 'rabbitmq'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['rabbitmq-broker:15672']
+    relabel_configs:
+      - target_label: service
+        replacement: 'rabbitmq'

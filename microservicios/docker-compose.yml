@@ -224,6 +224,121 @@ services:
     restart: unless-stopped
 
   # =========================
+  # Stack de Observabilidad
+  # =========================
+
+  # Prometheus - Recolector de Métricas (PULL Model)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus-server
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - microservices-net
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # Grafana - Visualización y Alertas
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana-server
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER: admin
+      GF_INSTALL_PLUGINS: grafana-piechart-panel,grafana-worldmap-panel
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      GF_LOG_LEVEL: info
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana-datasources.json:/etc/grafana/provisioning/datasources/datasources.json:ro
+      - ./observability/grafana-dashboards-provider.json:/etc/grafana/provisioning/dashboards/dashboards.json:ro
+      - ./observability/dashboards:/etc/grafana/provisioning/dashboards/custom:ro
+    networks:
+      - microservices-net
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - zipkin
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Zipkin - Trazas Distribuidas
+  zipkin:
+    image: openzipkin/zipkin:latest
+    container_name: zipkin-server
+    environment:
+      STORAGE_TYPE: mem
+      JAVA_OPTS: "-Xmx512m"
+    networks:
+      - microservices-net
+    ports:
+      - "9411:9411"
+      - "9410:9410"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9411/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # Loki - Almacenamiento de Logs
+  loki:
+    image: grafana/loki:latest
+    container_name: loki-server
+    command: -config.file=/etc/loki/local-config.yml
+    volumes:
+      - ./observability/loki-config.yml:/etc/loki/local-config.yml:ro
+      - loki_data:/loki/chunks
+    networks:
+      - microservices-net
+    ports:
+      - "3100:3100"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # Promtail - Colector de Logs
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail-agent
+    volumes:
+      - ./observability/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/log:/var/log:ro
+    networks:
+      - microservices-net
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  # =========================
   # Herramientas CI/CD
   # =========================
 
@@ -360,4 +475,11 @@ volumes:
   sonarqube_db_data:
     driver: local
   registry_data:
+    driver: local
+  # Observability Volumes
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  loki_data:
     driver: local
