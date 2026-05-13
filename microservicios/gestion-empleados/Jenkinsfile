@@ -33,10 +33,9 @@ pipeline {
     stage('Build & Test') {
       steps {
         dir("${APP_DIR}") {
-          sh '''
-            mvn clean org.jacoco:jacoco-maven-plugin:prepare-agent verify org.jacoco:jacoco-maven-plugin:report \
-              -DskipTests=false
-          '''
+          // mvn clean verify ejecuta el ciclo completo incluyendo JaCoCo
+          // (prepare-agent en initialize + report en test, ya configurados en pom.xml)
+          sh 'mvn clean verify'
         }
       }
       post {

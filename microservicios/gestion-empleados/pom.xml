@@ -219,7 +219,14 @@
                     <argLine>${surefireArgLine}</argLine>
                     <includes>
                         <include>**/*UnitTest.java</include>
+                        <include>**/*UnitTests.java</include>
                     </includes>
+                    <!-- Excluir tests de integracion: requieren docker-compose up -->
+                    <excludes>
+                        <exclude>**/*IntegrationTest.java</exclude>
+                        <exclude>**/*IntegrationTests.java</exclude>
+                        <exclude>**/integration/**</exclude>
+                    </excludes>
                 </configuration>
             </plugin>
         </plugins>
