@@ -132,27 +132,6 @@
             <version>1.34.1</version>
         </dependency>
 
-        <!-- OpenTelemetry Exporter Zipkin (for distributed traces) -->
-        <dependency>
-            <groupId>io.opentelemetry.exporter</groupId>
-            <artifactId>opentelemetry-exporter-zipkin</artifactId>
-            <version>1.34.1</version>
-        </dependency>
-
-        <!-- OpenTelemetry SDK for logging -->
-        <dependency>
-            <groupId>io.opentelemetry</groupId>
-            <artifactId>opentelemetry-sdk-logs</artifactId>
-            <version>1.34.1-alpha</version>
-        </dependency>
-
-        <!-- OpenTelemetry Instrumentation Spring Boot -->
-        <dependency>
-            <groupId>io.opentelemetry.instrumentation</groupId>
-            <artifactId>opentelemetry-instrumentation-spring-boot-autoconfigure</artifactId>
-            <version>1.34.1</version>
-        </dependency>
-
         <!-- Logback JSON Encoder for structured logs -->
         <dependency>
             <groupId>net.logstash.logback</groupId>
