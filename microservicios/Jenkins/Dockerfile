@@ -4,10 +4,9 @@ FROM jenkins/jenkins:lts-jdk17
 # Cambiar a usuario root para instalar dependencias
 USER root
 
-# Actualizar packages e instalar Docker CLI y docker-compose
+# Actualizar packages e instalar Docker CLI
 RUN apt-get update && apt-get install -y \
   docker.io \
-  docker-compose \
   git \
   curl \
   wget \
