@@ -8,11 +8,10 @@
     "allowSyntheticDefaultImports": true,
     "strict": false,
     "module": "ESNext",
-    "moduleResolution": "Node",
+    "moduleResolution": "Bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "react-jsx",
-    "outDir": "dist"
+    "jsx": "react-jsx"
   },
   "include": ["src"]
 }
