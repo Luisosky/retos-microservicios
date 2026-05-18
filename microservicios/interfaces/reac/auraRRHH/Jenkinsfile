@@ -1,0 +1,20 @@
+pipeline {
+  agent any
+  stages {
+    stage('Install') {
+      steps {
+        sh 'npm ci'
+      }
+    }
+    stage('Build') {
+      steps {
+        sh 'npm run build'
+      }
+    }
+    stage('Build Docker Image') {
+      steps {
+        sh 'docker build -t aura-rrhh-frontend:latest .'
+      }
+    }
+  }
+}

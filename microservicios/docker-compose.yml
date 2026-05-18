@@ -223,6 +223,24 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # Frontend Aura RRHH - Aplicación React estática servida por Nginx
+  frontend-service:
+    build:
+      context: ./interfaces/reac/auraRRHH
+    container_name: aura-rrhh-frontend
+    networks:
+      - microservices-net
+    ports:
+      - "3001:80"
+    depends_on:
+      autenticacion:
+        condition: service_healthy
+      empleados-service:
+        condition: service_healthy
+      perfiles:
+        condition: service_healthy
+    restart: unless-stopped
+
   # =========================
   # Stack de Observabilidad
   # =========================
@@ -241,7 +259,7 @@ services:
     networks:
       - microservices-net
     ports:
-      - "9090:9090"
+      - "9091:9090"
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
       interval: 10s

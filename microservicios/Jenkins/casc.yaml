@@ -53,3 +53,15 @@ jobs:
           }
         }
       }
+      - script: |
+          def pipelineScript = new File('/workspace/repo/microservicios/interfaces/reac/auraRRHH/Jenkinsfile').text
+
+          pipelineJob('aura-rrhh-frontend-ci') {
+            description('Pipeline CI para el frontend Aura RRHH: build y creación de imagen Docker.')
+            definition {
+              cps {
+                script(pipelineScript)
+                sandbox(true)
+              }
+            }
+          }
