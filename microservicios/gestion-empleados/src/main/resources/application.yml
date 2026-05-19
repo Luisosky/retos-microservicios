@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: gestion-empleados
+  config:
+    import: optional:classpath:application-secret.yml
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/empleados-db}
+      auto-index-creation: true
+      # Configuración de conexión pool para mejor rendimiento
+      connection-string: ${MONGODB_URI:mongodb://localhost:27017/empleados-db}
+      # Timeouts y configuración de reconexión
+      connect-timeout-ms: 30000
+      socket-timeout-ms: 30000
+      max-pool-size: 20
+      min-pool-size: 5
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+server:
+  port: 8080
+
+# Configuración de microservicios externos
+services:
+  departamentos:
+    url: ${DEPARTAMENTOS_SERVICE_URL:http://localhost:8081}
+
+logging:
+  level:
+    com.microservicios.empleados: INFO
+    org.springframework.data.mongodb: INFO
+
+# Configuración de Springdoc OpenAPI (Swagger)
+springdoc:
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+    show-logo: true
+    syntaxHighlight:
+      activate: true
+    theme: light
+  api-docs:
+    path: /v3/api-docs
+  show-actuator: false
+

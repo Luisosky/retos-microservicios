@@ -1,0 +1,87 @@
+services:
+  # =========================
+  # Servicios de Infraestructura
+  # =========================
+  redis:
+    image: redis:7-alpine
+    container_name: redis-cache
+    command: redis-server
+    volumes:
+      - redis_data:/data
+    networks:
+      - microservices-net
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =========================
+  # Microservicios
+  # =========================
+  empleados-service:
+    build:
+      context: ./gestion-empleados
+    container_name: empleados-service
+    environment:
+      # MongoDB Atlas Configuration (Cloud)
+      MONGODB_URI: ${MONGODB_URI}
+      SPRING_DATA_MONGODB_DATABASE: ${MONGODB_DATABASE}
+      # Redis Configuration (Local)
+      SPRING_DATA_REDIS_HOST: ${REDIS_HOST}
+      SPRING_DATA_REDIS_PORT: ${REDIS_PORT}
+      # Microservices Communication
+      DEPARTAMENTOS_SERVICE_URL: http://departamentos:8081
+      # Application Configuration
+      SERVER_PORT: 8080
+    depends_on:
+      redis:
+        condition: service_healthy
+      departamentos:
+        condition: service_healthy
+    networks:
+      - microservices-net
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  departamentos:
+    build:
+      context: ./gestion-Departamentos
+    container_name: departamentos
+    environment:
+      # Supabase PostgreSQL Connection (Cloud)
+      DEP_DATABASE_URL: ${DEP_DATABASE_URL}
+    networks:
+      - microservices-net
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/docs"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+# =========================
+# Red interna
+# =========================
+networks:
+  microservices-net:
+    driver: bridge
+
+# =========================
+# Volúmenes de persistencia
+# =========================
+volumes:
+  redis_data:
+    driver: local
