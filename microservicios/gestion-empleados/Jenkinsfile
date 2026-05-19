@@ -1,0 +1,142 @@
+pipeline {
+  agent any
+
+  options {
+    buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '10'))
+    timeout(time: 60, unit: 'MINUTES')
+  }
+
+  environment {
+    APP_DIR = 'microservicios/gestion-empleados'
+    E2E_DIR = 'e2e-tests'
+    COMPOSE_FILE = 'microservicios/docker-compose.yml'
+    SONAR_HOST_URL = 'http://sonarqube:9000'
+    SONAR_PROJECT_KEY = 'com.microservicios:gestion-empleados'
+    SONAR_PROJECT_NAME = 'gestion-empleados'
+    MIN_COVERAGE = '15.0'
+    IMAGE_NAME = 'localhost:5001/gestion-empleados'
+    SONARQUBE_TOKEN = credentials('sonarqube-token')
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        script {
+          def checkoutBranch = (env.GIT_BRANCH ?: 'reto6').replace('*/', '')
+          def checkoutUrl = env.GIT_REPO_URL ?: 'file:///workspace/repo'
+
+          git branch: checkoutBranch, url: checkoutUrl
+        }
+      }
+    }
+
+    stage('Build & Test') {
+      steps {
+        dir("${APP_DIR}") {
+          // mvn clean verify ejecuta el ciclo completo incluyendo JaCoCo
+          // (prepare-agent en initialize + report en test, ya configurados en pom.xml)
+          sh 'mvn clean verify'
+        }
+      }
+      post {
+        always {
+          archiveArtifacts artifacts: 'microservicios/gestion-empleados/target/site/jacoco/**', allowEmptyArchive: true
+          archiveArtifacts artifacts: 'microservicios/gestion-empleados/target/surefire-reports/*.xml', allowEmptyArchive: true
+        }
+      }
+    }
+
+    stage('Coverage Gate (>= 15%)') {
+      steps {
+        dir("${APP_DIR}") {
+          sh """
+            coverage=\$(awk -F, 'NR>1 {missed+=\$4; covered+=\$5} END {total=missed+covered; if(total==0){print \"0.00\"} else {printf \"%.2f\", (covered*100)/total}}' target/site/jacoco/jacoco.csv)
+            echo "Cobertura JaCoCo: \${coverage}%"
+            awk -v coverage="\${coverage}" -v minimum="${MIN_COVERAGE}" 'BEGIN { if ((coverage + 0) < (minimum + 0)) exit 1 }' || { echo "Cobertura insuficiente: \${coverage}% < ${MIN_COVERAGE}%"; exit 1; }
+          """
+        }
+      }
+    }
+
+    stage('SonarQube Analysis') {
+      steps {
+        dir("${APP_DIR}") {
+          withSonarQubeEnv('SonarQube') {
+            sh '''
+              mvn sonar:sonar \
+                -Dsonar.host.url=${SONAR_HOST_URL} \
+                -Dsonar.login=${SONARQUBE_TOKEN} \
+                -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                -Dsonar.projectName=${SONAR_PROJECT_NAME} \
+                -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Quality Gate') {
+      steps {
+        timeout(time: 10, unit: 'MINUTES') {
+          waitForQualityGate abortPipeline: true
+        }
+      }
+    }
+
+    stage('Package') {
+      steps {
+        dir("${APP_DIR}") {
+          sh '''
+            docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} -t ${IMAGE_NAME}:latest .
+            if docker ps --format '{{.Names}}' | grep -q '^local-registry$'; then
+              docker push ${IMAGE_NAME}:${BUILD_NUMBER}
+              docker push ${IMAGE_NAME}:latest
+            else
+              echo "Registry local no disponible. Se omite push."
+            fi
+          '''
+        }
+      }
+    }
+
+    stage('E2E Tests') {
+      steps {
+        sh '''
+          docker-compose -f ${COMPOSE_FILE} up -d --build
+
+          for url in \
+            http://localhost:8080/v3/api-docs \
+            http://localhost:8081/docs \
+            http://localhost:8084/health; do
+            echo "Esperando servicio en ${url}"
+            ok=0
+            for i in $(seq 1 30); do
+              if curl -fsS "$url" >/dev/null; then
+                ok=1
+                echo "Servicio listo: ${url}"
+                break
+              fi
+              sleep 10
+            done
+            if [ "$ok" -ne 1 ]; then
+              echo "Timeout esperando ${url}"
+              exit 1
+            fi
+          done
+        '''
+
+        dir("${E2E_DIR}") {
+          sh 'go test ./step_definitions -v'
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      sh '''
+        docker-compose -f ${COMPOSE_FILE} down -v --remove-orphans || true
+      '''
+    }
+  }
+}

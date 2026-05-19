@@ -48,6 +48,76 @@ Docker Compose automáticamente:
 
 La aplicación estará disponible en `http://localhost:8080`
 
+### Interfaz de administración del broker (RabbitMQ)
+
+Con Docker Compose levantado, la consola de administración queda disponible en:
+
+- URL: `http://localhost:15672`
+- Usuario: `guest` (o el valor de `RABBITMQ_DEFAULT_USER`)
+- Contraseña: `guest` (o el valor de `RABBITMQ_DEFAULT_PASS`)
+
+Si deseas cambiar credenciales, define estas variables en el archivo `.env` del proyecto raíz:
+
+- `RABBITMQ_DEFAULT_USER`
+- `RABBITMQ_DEFAULT_PASS`
+
+Luego reinicia:
+
+```bash
+docker compose up -d --build
+```
+
+## ¿Por qué se eligió RabbitMQ como broker?
+
+Se eligió RabbitMQ para este proyecto porque ofrece un equilibrio sólido entre simplicidad operativa y capacidades de mensajería empresarial:
+
+- Soporta colas, enrutamiento y patrones pub/sub de forma nativa (ideal para microservicios).
+- Incluye confirmaciones de entrega y reintentos, útiles para desacoplar servicios con mayor confiabilidad.
+- Tiene interfaz de administración web integrada para monitoreo rápido (colas, exchanges, consumers, throughput).
+- Es maduro, ampliamente documentado y fácil de ejecutar en Docker para entornos académicos y de desarrollo.
+
+### Comparación breve con alternativas
+
+- Redis Pub/Sub: muy rápido y simple, pero menos robusto para persistencia, reintentos y garantías de entrega.
+- Apache Kafka: excelente para alto volumen y streaming, pero introduce mayor complejidad operativa para este alcance.
+- NATS: ligero y veloz, aunque con menor adopción en escenarios de colas tradicionales con enrutamiento tipo AMQP.
+
+Para este sistema, RabbitMQ cubre mejor el caso de uso de eventos entre servicios sin sobrecargar la infraestructura.
+
+## Publicación de eventos del Servicio de Empleados
+
+El servicio publica eventos en RabbitMQ después de que la operación en base de datos es exitosa.
+
+- Exchange: `empleados.events`
+- Routing key al crear: `empleado.creado`
+- Routing key al eliminar: `empleado.eliminado`
+
+Si la publicación en el broker falla, la operación de base de datos no se revierte. El error se registra en logs para diagnóstico.
+
+### Contrato JSON: empleado.creado
+
+Se publica al ejecutar exitosamente `POST /empleado`:
+
+```json
+{
+  "id": "EMP001",
+  "nombre": "Juan",
+  "email": "juan.perez@empresa.com",
+  "departamentoId": "DEP001",
+  "fechaIngreso": "2024-01-15"
+}
+```
+
+### Contrato JSON: empleado.eliminado
+
+Se publica al ejecutar exitosamente `DELETE /empleado/{id}`:
+{
+   "id": "EMP001",
+   "nombre": "Juan",
+   "email": "juan.perez@empresa.com"
+}
+```
+
 ### Opción 2: Ejecución Local (sin Docker)
 
 Si necesitas ejecutar directamente en tu máquina para debugging:

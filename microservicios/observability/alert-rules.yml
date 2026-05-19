@@ -1,0 +1,115 @@
+# Grafana Alert Rules Configuration
+# ==================================
+
+groups:
+  - name: microservices-alerts
+    interval: 30s
+    rules:
+      # ==========================================
+      # Alert 1: Service Down
+      # ==========================================
+      - uid: service_down_alert
+        title: "🚨 Service is DOWN"
+        condition: A
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus-uid
+            model:
+              expr: 'up{job=~".*-service"} == 0'
+              intervalFactor: 1
+              refId: A
+        noDataState: "NoData"
+        execErrState: "Alerting"
+        for: "2m"
+        annotations:
+          description: "{{ $labels.job }} is down. Immediate action required!"
+          summary: "Service {{ $labels.job }} is not responding"
+          runbook_url: "https://example.com/runbooks/service-down"
+        labels:
+          severity: "critical"
+          team: "platform"
+
+      # ==========================================
+      # Alert 2: High Latency (P99 > 1000ms)
+      # ==========================================
+      - uid: high_latency_alert
+        title: "⚠️ High Request Latency Detected"
+        condition: A
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus-uid
+            model:
+              expr: 'histogram_quantile(0.99, rate(http_server_requests_seconds_bucket[5m])) > 1'
+              intervalFactor: 1
+              refId: A
+        noDataState: "NoData"
+        execErrState: "Alerting"
+        for: "5m"
+        annotations:
+          description: "P99 latency for {{ $labels.service }} is {{ humanizeDuration $value }}"
+          summary: "High latency on {{ $labels.service }}"
+        labels:
+          severity: "warning"
+          team: "platform"
+
+      # ==========================================
+      # Alert 3: Error Rate Too High (> 5%)
+      # ==========================================
+      - uid: error_rate_alert
+        title: "🔴 Error Rate Spike"
+        condition: A
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus-uid
+            model:
+              expr: '100 * (rate(http_server_requests_seconds_count{status=~"5.."}[5m]) / ignoring(status) group_left sum by (service) (rate(http_server_requests_seconds_count[5m]))) > 5'
+              intervalFactor: 1
+              refId: A
+        noDataState: "NoData"
+        execErrState: "Alerting"
+        for: "5m"
+        annotations:
+          description: "Error rate for {{ $labels.service }} is {{ humanize $value }}%"
+          summary: "High error rate detected on {{ $labels.service }}"
+        labels:
+          severity: "warning"
+          team: "platform"
+
+      # ==========================================
+      # Alert 4: Memory Usage High (> 80%)
+      # ==========================================
+      - uid: memory_usage_alert
+        title: "💾 High Memory Usage"
+        condition: A
+        data:
+          - refId: A
+            queryType: ""
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus-uid
+            model:
+              expr: '(process_resident_memory_bytes / 1073741824) > 0.8'
+              intervalFactor: 1
+              refId: A
+        noDataState: "NoData"
+        execErrState: "Alerting"
+        for: "5m"
+        annotations:
+          description: "Memory usage for {{ $labels.service }} is high"
+          summary: "Service {{ $labels.service }} is using > 80% of allocated memory"
+        labels:
+          severity: "warning"
+          team: "platform"

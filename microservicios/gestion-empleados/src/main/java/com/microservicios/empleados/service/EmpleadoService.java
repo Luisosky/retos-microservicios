@@ -1,22 +1,22 @@
 package com.microservicios.empleados.service;
 
 import com.microservicios.empleados.client.DepartamentoClient;
+import com.microservicios.empleados.dto.EmpleadoUpdateRequest;
 import com.microservicios.empleados.enums.EstadoEmpleado;
 import com.microservicios.empleados.exception.DepartamentoNoValidoException;
 import com.microservicios.empleados.exception.EmpleadoYaExisteException;
 import com.microservicios.empleados.exception.EmpleadoNoEncontradoException;
 import com.microservicios.empleados.model.Empleado;
-import com.microservicios.empleados.model.EventoEmpleado;
 import com.microservicios.empleados.repository.EmpleadoRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.List;
 
@@ -25,10 +25,12 @@ import java.util.List;
 @Slf4j
 public class EmpleadoService {
     private final EmpleadoRepository empleadoRepository;
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
     private final DepartamentoClient departamentoClient;
-    private static final String STREAM_KEY = "eventos:empleados";
+
+    @Value("${app.messaging.exchange:empleados.events}")
+    private String empleadosExchange;
 
     @Transactional
     public Empleado crearEmpleado(Empleado empleado) {
@@ -63,9 +65,18 @@ public class EmpleadoService {
 
         Empleado empleadoGuardado = empleadoRepository.save(empleado);
         log.info("Empleado creado exitosamente: {}", empleadoGuardado.getNumeroEmpleado());
-        
+
         publicarEventoEmpleadoCreado(empleadoGuardado);
         return empleadoGuardado;
+    }
+
+    @Transactional
+    public void eliminarEmpleado(String id) {
+        Empleado empleado = obtenerEmpleadoPorId(id);
+        empleadoRepository.delete(empleado);
+        log.info("Empleado eliminado exitosamente: {}", id);
+
+        publicarEventoEmpleadoEliminado(empleado);
     }
 
     public Empleado obtenerEmpleadoPorId(String id) {
@@ -73,24 +84,76 @@ public class EmpleadoService {
                 .orElseThrow(() -> new EmpleadoNoEncontradoException("El empleado con id " + id + " no existe"));
     }
 
+    public Empleado obtenerEmpleadoPorEmail(String email) {
+        return empleadoRepository.findByEmail(email)
+                .orElseThrow(() -> new EmpleadoNoEncontradoException("El empleado con email " + email + " no existe"));
+    }
+
+    @Transactional
+    public Empleado actualizarEmpleado(String id, EmpleadoUpdateRequest request) {
+        Empleado existente = obtenerEmpleadoPorId(id);
+
+        String nuevoEmail = request.getEmail().trim();
+        if (!existente.getEmail().equalsIgnoreCase(nuevoEmail) && empleadoRepository.existsByEmail(nuevoEmail)) {
+            throw new EmpleadoYaExisteException("El email " + nuevoEmail + " ya está registrado");
+        }
+
+        String nuevoDepartamentoId = request.getDepartamentoId().trim();
+        if (!departamentoClient.existeDepartamento(nuevoDepartamentoId)) {
+            throw new DepartamentoNoValidoException(
+                    "El departamento con id '" + nuevoDepartamentoId + "' no existe o no está activo"
+            );
+        }
+
+        existente.setEmail(nuevoEmail);
+        existente.setNombre(request.getNombre().trim());
+        existente.setApellido(request.getApellido().trim());
+        existente.setCargo(request.getCargo().trim());
+        existente.setArea(request.getArea().trim());
+        existente.setDepartamentoId(nuevoDepartamentoId);
+        existente.setFechaIngreso(request.getFechaIngreso());
+        existente.setEstado(request.getEstado() == null ? existente.getEstado() : request.getEstado());
+
+        return empleadoRepository.save(existente);
+    }
+
     private void publicarEventoEmpleadoCreado(Empleado empleado) {
         try {
-            EventoEmpleado evento = EventoEmpleado.builder()
-                    .tipo("EMPLEADO_CREADO")
-                    .datos(empleado)
-                    .timestamp(LocalDateTime.now())
-                    .build();
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("id", empleado.getNumeroEmpleado());
+            payload.put("nombre", empleado.getNombre());
+            payload.put("email", empleado.getEmail());
+            payload.put("departamentoId", empleado.getDepartamentoId());
+            payload.put("fechaIngreso", empleado.getFechaIngreso());
 
-            Map<String, String> eventoMap = new HashMap<>();
-            eventoMap.put("tipo", evento.getTipo());
-            eventoMap.put("numeroEmpleado", empleado.getNumeroEmpleado());
-            eventoMap.put("timestamp", evento.getTimestamp().toString());
-            eventoMap.put("datos", objectMapper.writeValueAsString(evento.getDatos()));
-
-            redisTemplate.opsForStream().add(STREAM_KEY, eventoMap);
+            rabbitTemplate.convertAndSend(
+                    empleadosExchange,
+                    "empleado.creado",
+                    objectMapper.writeValueAsString(payload)
+            );
+            log.info("Evento publicado: empleado.creado para empleado {}", empleado.getNumeroEmpleado());
         } catch (Exception e) {
-            // Log the error but don't fail the employee creation
-            System.err.println("Error al publicar evento a Redis: " + e.getMessage());
+            // Si falla el broker, no se revierte la operación de base de datos.
+            log.error("Error al publicar evento empleado.creado para {}: {}", empleado.getNumeroEmpleado(), e.getMessage());
+        }
+    }
+
+    private void publicarEventoEmpleadoEliminado(Empleado empleado) {
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("id", empleado.getNumeroEmpleado());
+            payload.put("nombre", empleado.getNombre());
+            payload.put("email", empleado.getEmail());
+
+            rabbitTemplate.convertAndSend(
+                    empleadosExchange,
+                    "empleado.eliminado",
+                    objectMapper.writeValueAsString(payload)
+            );
+            log.info("Evento publicado: empleado.eliminado para empleado {}", empleado.getNumeroEmpleado());
+        } catch (Exception e) {
+            // Si falla el broker, no se revierte la operación de base de datos.
+            log.error("Error al publicar evento empleado.eliminado para {}: {}", empleado.getNumeroEmpleado(), e.getMessage());
         }
     }
 

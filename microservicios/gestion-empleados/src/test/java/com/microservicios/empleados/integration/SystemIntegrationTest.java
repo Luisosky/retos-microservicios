@@ -3,6 +3,8 @@ package com.microservicios.empleados.integration;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Tag;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
 
@@ -24,6 +26,14 @@ import static org.junit.jupiter.api.Assertions.*;
  * NOTA: Las pruebas asumen que el departamento "IT" existe.
  * Si no existe, se creará automáticamente como prerequisito.
  */
+/**
+ * Tests E2E de integración del sistema.
+ * REQUIERE servicios externos corriendo (docker-compose up).
+ * NO se ejecutan en el pipeline CI (excluidos en pom.xml y Surefire).
+ * Para correr manualmente: mvn test -Dgroups=integration
+ */
+@Tag("integration")
+@Disabled("Requiere docker-compose up: empleados:8080 y departamentos:8081")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class SystemIntegrationTest {
 

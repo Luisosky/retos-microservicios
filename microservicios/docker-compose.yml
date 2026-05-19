@@ -18,26 +18,56 @@ services:
       timeout: 5s
       retries: 5
 
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq-broker
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+    ports:
+      - "5672:5672"   # Puerto de mensajería (AMQP)
+      - "15672:15672" # Interfaz web de administración
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - microservices-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # =========================
   # Microservicios
   # =========================
+
+  # Servicio en Java (Spring Boot) - Publicador de eventos
   empleados-service:
     build:
       context: ./gestion-empleados
     container_name: empleados-service
     environment:
-      # MongoDB Atlas Configuration (Cloud)
+      # MongoDB Atlas Configuration
       MONGODB_URI: ${MONGODB_URI}
       SPRING_DATA_MONGODB_DATABASE: ${MONGODB_DATABASE}
-      # Redis Configuration (Local)
+      # Redis Configuration
       SPRING_DATA_REDIS_HOST: ${REDIS_HOST}
       SPRING_DATA_REDIS_PORT: ${REDIS_PORT}
+      # RabbitMQ Configuration
+      SPRING_RABBITMQ_HOST: rabbitmq-broker
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-guest}
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-guest}
       # Microservices Communication
       DEPARTAMENTOS_SERVICE_URL: http://departamentos:8081
-      # Application Configuration
       SERVER_PORT: 8080
+      JWT_ISSUER: auth-service
+      JWT_AUDIENCE: microservices-clients
+      JWT_SECRET: ${JWT_SECRET:-SuperSecretKeyWithMoreThan32CharactersForJWTTokenSigning}
     depends_on:
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       departamentos:
         condition: service_healthy
@@ -46,20 +76,26 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/docs"]
-      interval: 10s
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v3/api-docs"]
+      interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 40s
     restart: unless-stopped
 
+  # Servicio en Python (FastAPI)
   departamentos:
     build:
       context: ./gestion-Departamentos
     container_name: departamentos
     environment:
-      # Supabase PostgreSQL Connection (Cloud)
+      # Supabase PostgreSQL Connection
       DEP_DATABASE_URL: ${DEP_DATABASE_URL}
+      JWT_ISSUER: auth-service
+      JWT_AUDIENCE: microservices-clients
+      JWT_SECRET: ${JWT_SECRET:-SuperSecretKeyWithMoreThan32CharactersForJWTTokenSigning}
+      # RabbitMQ Configuration (si llega a consumir eventos)
+      RABBITMQ_HOST: rabbitmq-broker
     networks:
       - microservices-net
     ports:
@@ -72,11 +108,378 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # Servicio de Notificaciones (consumidor de eventos)
+  notificaciones:
+    build:
+      context: ./gestion-notificaciones
+    container_name: notificaciones
+    env_file:
+      - ./.env
+    environment:
+      RABBITMQ_HOST: rabbitmq-broker
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-guest}
+      NOTIF_EXCHANGE: empleados.events
+      NOTIF_QUEUE: notificaciones.queue
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - microservices-net
+    ports:
+      - "8082:8082"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Servicio de Autenticacion en C# (ASP.NET Core)
+  autenticacion:
+    build:
+      context: ./servicio-Autenticación
+    container_name: autenticacion-service
+    env_file:
+      - ./.env
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8084
+      JWT_ISSUER: auth-service
+      JWT_AUDIENCE: microservices-clients
+      JWT_SECRET: ${JWT_SECRET:-SuperSecretKeyWithMoreThan32CharactersForJWTTokenSigning}
+      JWT_EXPIRATION_MINUTES: ${JWT_EXPIRATION_MINUTES:-60}
+      RESET_TOKEN_EXPIRATION_MINUTES: ${RESET_TOKEN_EXPIRATION_MINUTES:-30}
+      AUTH_USERS_TABLE: ${AUTH_USERS_TABLE:-auth_usuarios}
+      RABBITMQ_HOST: rabbitmq-broker
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-guest}
+      AUTH_EXCHANGE: empleados.events
+      AUTH_QUEUE: auth.queue
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - microservices-net
+    ports:
+      - "8084:8084"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Servicio de Perfiles en PHP (Laravel) - Consumidor y API
+  perfiles:
+    build:
+      context: ./gestion-perfiles
+    container_name: perfiles-service
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      APP_KEY: ${PERFILES_LARAVEL_APP_KEY:-}
+      APP_URL: http://localhost:8083
+      EMPLEADOS_SERVICE_URL: http://empleados-service:8080
+      JWT_ISSUER: auth-service
+      JWT_AUDIENCE: microservices-clients
+      JWT_SECRET: ${JWT_SECRET:-SuperSecretKeyWithMoreThan32CharactersForJWTTokenSigning}
+
+      DB_CONNECTION: pgsql
+      DATABASE_URL: ${PERFILES_DATABASE_URL:-${PERFILES_APP_KEY}}
+
+      RABBITMQ_HOST: rabbitmq-broker
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+      RABBITMQ_EXCHANGE: empleados.events
+      RABBITMQ_QUEUE: perfiles.queue
+
+      CACHE_DRIVER: redis
+      SESSION_DRIVER: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - microservices-net
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./gestion-perfiles/storage:/var/www/storage
+      - ./gestion-perfiles/bootstrap/cache:/var/www/bootstrap/cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Frontend Aura RRHH - Aplicación React estática servida por Nginx
+  frontend-service:
+    build:
+      context: ./interfaces/reac/auraRRHH
+    container_name: aura-rrhh-frontend
+    networks:
+      - microservices-net
+    ports:
+      - "3001:80"
+    depends_on:
+      autenticacion:
+        condition: service_healthy
+      empleados-service:
+        condition: service_healthy
+      perfiles:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # =========================
+  # Stack de Observabilidad
+  # =========================
+
+  # Prometheus - Recolector de Métricas (PULL Model)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus-server
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - microservices-net
+    ports:
+      - "9091:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # Grafana - Visualización y Alertas
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana-server
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_USER: admin
+      GF_INSTALL_PLUGINS: grafana-piechart-panel,grafana-worldmap-panel
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      GF_LOG_LEVEL: info
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # Discord Webhook para notificaciones
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK:-https://discord.com/api/webhooks/1503990538926428231/apQdq-TJOeg2I06hgQ0js2uRhPp3vq-IqKKBQ81Ukoje-X4X130lhhAIDy8HBtqnt6n0}
+      # Configuración de alertas
+      GF_UNIFIED_ALERTING_ENABLED: "true"
+      GF_ALERTING_ENABLED: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana-datasources.json:/etc/grafana/provisioning/datasources/datasources.json:ro
+      - ./observability/grafana-dashboards-provider.json:/etc/grafana/provisioning/dashboards/dashboards.json:ro
+      - ./observability/dashboards:/etc/grafana/provisioning/dashboards/custom:ro
+      - ./observability/grafana-notifiers.json:/etc/grafana/provisioning/notifiers/notifiers.json:ro
+    networks:
+      - microservices-net
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+      - loki
+      - zipkin
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Zipkin - Trazas Distribuidas
+  zipkin:
+    image: openzipkin/zipkin:latest
+    container_name: zipkin-server
+    environment:
+      STORAGE_TYPE: mem
+      JAVA_OPTS: "-Xmx512m"
+    networks:
+      - microservices-net
+    ports:
+      - "9411:9411"
+      - "9410:9410"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9411/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # Loki - Almacenamiento de Logs
+  loki:
+    image: grafana/loki:latest
+    container_name: loki-server
+    command: -config.file=/etc/loki/local-config.yml
+    volumes:
+      - ./observability/loki-config.yml:/etc/loki/local-config.yml:ro
+      - loki_data:/loki/chunks
+    networks:
+      - microservices-net
+    ports:
+      - "3100:3100"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # Promtail - Colector de Logs
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail-agent
+    volumes:
+      - ./observability/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/log:/var/log:ro
+    networks:
+      - microservices-net
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    restart: unless-stopped
+
+  # =========================
+  # Herramientas CI/CD
+  # =========================
+
+  # Jenkins para integración continua
+  jenkins:
+    build:
+      context: ./Jenkins
+      dockerfile: Dockerfile
+    container_name: jenkins-server
+    environment:
+      # Desactivar setup wizard para usar JCasC
+      JENKINS_OPTS: ""
+      # Configuración de JCasC
+      CASC_JENKINS_CONFIG: /var/jenkins_home/casc.yaml
+      # Java options para mejor rendimiento
+      JAVA_OPTS: "-Djenkins.install.runSetupWizard=false -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true -Xmx1g -Xms512m"
+      # Credenciales y conexión SonarQube
+      JWT_SECRET: ${JWT_SECRET:-SuperSecretKeyWithMoreThan32CharactersForJWTTokenSigning}
+      SONARQUBE_TOKEN: ${SONARQUBE_TOKEN:-default-sonarqube-token}
+      SONAR_HOST_URL: http://sonarqube:9000
+      GIT_REPO_URL: ${GIT_REPO_URL:-file:///workspace/repo}
+      GIT_BRANCH: ${GIT_BRANCH:-reto6}
+    networks:
+      - microservices-net
+    ports:
+      - "9090:8080"        # Interfaz web de Jenkins
+      - "50000:50000"      # Puerto para agentes Jenkins
+    volumes:
+      # Persistencia de datos de Jenkins
+      - ./jenkins_data:/var/jenkins_home
+      # Archivo JCasC montado explicitamente para evitar perdida por bind mount de jenkins_home
+      - ./Jenkins/casc.yaml:/var/jenkins_home/casc.yaml:ro
+      # Acceso al socket de Docker del host
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Repositorio del proyecto para pipeline job creado por JCasC
+      - ../:/workspace/repo:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      sonarqube:
+        condition: service_started
+      registry:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  # Registry local opcional para almacenar imagenes de build
+  registry:
+    image: registry:2
+    container_name: local-registry
+    networks:
+      - microservices-net
+    ports:
+      - "${REGISTRY_PORT:-5001}:5000"
+    volumes:
+      - registry_data:/var/lib/registry
+    restart: unless-stopped
+
+  # SonarQube para análisis estático multi-lenguaje
+  sonarqube-db:
+    image: postgres:15-alpine
+    container_name: sonarqube-db
+    environment:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar
+      POSTGRES_DB: sonarqube
+    volumes:
+      - sonarqube_db_data:/var/lib/postgresql/data
+    networks:
+      - microservices-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar -d sonarqube"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  sonarqube:
+    image: sonarqube:lts-community
+    container_name: sonarqube-server
+    depends_on:
+      sonarqube-db:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonarqube-db:5432/sonarqube
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: sonar
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+    networks:
+      - microservices-net
+    ports:
+      - "9000:9000"
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/api/system/status | grep -q 'UP'" ]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 90s
+    restart: unless-stopped
+
 # =========================
 # Red interna
 # =========================
 networks:
   microservices-net:
+    name: microservices-network
     driver: bridge
 
 # =========================
@@ -84,4 +487,23 @@ networks:
 # =========================
 volumes:
   redis_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+  sonarqube_data:
+    driver: local
+  sonarqube_extensions:
+    driver: local
+  sonarqube_logs:
+    driver: local
+  sonarqube_db_data:
+    driver: local
+  registry_data:
+    driver: local
+  # Observability Volumes
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  loki_data:
     driver: local

@@ -1,1 +1,4 @@
 .env
+.claude/
+CLAUDE.md
+microservicios/jenkins_data/

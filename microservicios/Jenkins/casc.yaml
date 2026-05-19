@@ -1,0 +1,67 @@
+jenkins:
+  systemMessage: "Jenkins preconfigurado con JCasC para CI de microservicios"
+  numExecutors: 2
+  mode: NORMAL
+
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "nicolasAdmin"
+          password: "omar"
+
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - string:
+              scope: GLOBAL
+              id: "jwt-secret-key"
+              secret: "${JWT_SECRET}"
+              description: "JWT secret para pruebas de integracion"
+          - string:
+              scope: GLOBAL
+              id: "sonarqube-token"
+              secret: "${SONARQUBE_TOKEN}"
+              description: "Token para SonarQube"
+
+unclassified:
+  location:
+    url: "http://localhost:9090/"
+  sonarGlobalConfiguration:
+    buildWrapperEnabled: false
+    installations:
+      - name: "SonarQube"
+        serverUrl: "http://sonarqube:9000"
+        credentialsId: "sonarqube-token"
+        mojoVersion: ""
+
+jobs:
+  - script: |
+      def pipelineScript = new File('/workspace/repo/microservicios/gestion-empleados/Jenkinsfile').text
+
+      pipelineJob('gestion-empleados-ci') {
+        description('Pipeline CI declarativo: build, SonarQube, package Docker y E2E BDD (Reto 6).')
+        definition {
+          cps {
+            script(pipelineScript)
+            sandbox(true)
+          }
+        }
+      }
+      - script: |
+          def pipelineScript = new File('/workspace/repo/microservicios/interfaces/reac/auraRRHH/Jenkinsfile').text
+
+          pipelineJob('aura-rrhh-frontend-ci') {
+            description('Pipeline CI para el frontend Aura RRHH: build y creación de imagen Docker.')
+            definition {
+              cps {
+                script(pipelineScript)
+                sandbox(true)
+              }
+            }
+          }
