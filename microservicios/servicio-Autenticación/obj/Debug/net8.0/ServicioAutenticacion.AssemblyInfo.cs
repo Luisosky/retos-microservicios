@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ServicioAutenticacion")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4b972433d066f7e87ae9402d39d8600f680d2cdf")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a49e73562cc6d44ff214b1e61b2ac4be729bf35a")]
 [assembly: System.Reflection.AssemblyProductAttribute("ServicioAutenticacion")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ServicioAutenticacion")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

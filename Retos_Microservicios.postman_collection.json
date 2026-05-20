@@ -1,0 +1,1257 @@
+{
+  "info": {
+    "_postman_id": "bfd67df7-7090-48e0-bb15-9c98b2c2f0f4",
+    "name": "Retos Microservicios",
+    "description": "Colección de Postman completa para probar y gestionar los endpoints de los 5 microservices en el proyecto Retos Microservicios (Autenticación, Empleados, Departamentos, Perfiles y Notificaciones).\n\nFlujo end-to-end orquestado:\n1. Autenticación: login User → flujo recover/reset (token capturado dinámicamente desde notificaciones y restaurado al final) → login Admin (deja el JWT con rol ADMIN para el resto de la colección).\n2. Departamentos: crea DEP001 (requerido para los empleados).\n3. Empleados: crea EMP001 (referencia DEP001) y ejecuta su ciclo de lectura/actualización.\n4. Perfiles: crea perfil para EMP001 (captura UUID interno) y ejecuta todas las variantes de lectura/actualización/borrado.\n5. Notificaciones: lista todas y por empleado.\n6. Limpieza: borra EMP001 y DEP001 para que la colección sea idempotente.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Autenticación",
+      "description": "Servicio de Autenticación en C# (.NET Web API) que administra usuarios, roles, JWT y flujos de recuperación de contraseñas. Corre por defecto en el puerto 8084.",
+      "item": [
+        {
+          "name": "Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Auth health responde 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{auth_url}}/health",
+              "host": ["{{auth_url}}"],
+              "path": ["health"]
+            },
+            "description": "Verifica la disponibilidad del servicio de autenticación, su base de datos Postgres y el message broker RabbitMQ."
+          },
+          "response": []
+        },
+        {
+          "name": "Login (User)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Login USER responde 200', function () { pm.response.to.have.status(200); });",
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.accessToken) {",
+                  "    pm.collectionVariables.set('jwt_token', jsonData.accessToken);",
+                  "    pm.collectionVariables.set('jwt_user_token', jsonData.accessToken);",
+                  "    console.log('Token JWT de USER guardado en jwt_token y jwt_user_token.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"a.salazar@empresa.com\",\n  \"password\": \"Micro123456!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{auth_url}}/auth/login",
+              "host": ["{{auth_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Inicia sesión con credenciales de un Usuario Común (a.salazar@empresa.com). Se ejecuta primero para usar el token USER en los endpoints de validación y recuperación; al final del folder se hace Login (Admin) para escalar privilegios."
+          },
+          "response": []
+        },
+        {
+          "name": "Validate Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Validate responde 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{jwt_token}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{auth_url}}/auth/validate",
+              "host": ["{{auth_url}}"],
+              "path": ["auth", "validate"]
+            },
+            "description": "Valida si el token JWT actual es válido y expone su rol y subject asociados."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Auth Context (Me)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Me responde 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{auth_url}}/auth/me",
+              "host": ["{{auth_url}}"],
+              "path": ["auth", "me"]
+            },
+            "description": "Obtiene los detalles del usuario actual basados en los claims del Bearer Token enviado en las cabeceras."
+          },
+          "response": []
+        },
+        {
+          "name": "Recover Password (Solicitar)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Snapshot del fechaEnvio más reciente para a.salazar ANTES de disparar recover, para luego aceptar solo notifs estrictamente más recientes.",
+                  "var notifUrl = pm.variables.replaceIn('{{notificaciones_url}}/notificaciones');",
+                  "var jwt = pm.collectionVariables.get('jwt_token');",
+                  "pm.sendRequest({ url: notifUrl, method: 'GET', header: { 'Authorization': 'Bearer ' + jwt } }, function (err, res) {",
+                  "    var baseline = '';",
+                  "    if (!err && res && res.code === 200) {",
+                  "        try {",
+                  "            var notifs = res.json();",
+                  "            for (var i = 0; i < notifs.length; i++) {",
+                  "                var n = notifs[i];",
+                  "                if (n.tipo === 'SEGURIDAD' && n.destinatario === 'a.salazar@empresa.com') {",
+                  "                    baseline = n.fechaEnvio || '';",
+                  "                    break;",
+                  "                }",
+                  "            }",
+                  "        } catch (e) {}",
+                  "    }",
+                  "    pm.collectionVariables.set('reset_baseline', baseline);",
+                  "    console.log('[recover-pre] baseline:', baseline || '(vacío)');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Recover responde 200', function () { pm.response.to.have.status(200); });",
+                  "// Polling sobre /notificaciones: el consumo del evento usuario.recuperacion es asíncrono. Aceptamos solo notifs estrictamente más recientes que el baseline tomado en pre-request.",
+                  "var baseline = pm.collectionVariables.get('reset_baseline') || '';",
+                  "var notifUrl = pm.variables.replaceIn('{{notificaciones_url}}/notificaciones');",
+                  "var jwt = pm.collectionVariables.get('jwt_token');",
+                  "function poll(left) {",
+                  "    pm.sendRequest({ url: notifUrl, method: 'GET', header: { 'Authorization': 'Bearer ' + jwt } }, function (err, res) {",
+                  "        if (err || !res || res.code !== 200) {",
+                  "            if (left > 0) { setTimeout(function(){ poll(left - 1); }, 600); }",
+                  "            else { console.log('[recover] no se pudo obtener notificaciones:', err || (res && res.code)); }",
+                  "            return;",
+                  "        }",
+                  "        var notifs; try { notifs = res.json(); } catch(e) { notifs = []; }",
+                  "        var token = null;",
+                  "        for (var i = 0; i < notifs.length; i++) {",
+                  "            var n = notifs[i];",
+                  "            if (n.tipo !== 'SEGURIDAD' || n.destinatario !== 'a.salazar@empresa.com') continue;",
+                  "            if (baseline && (n.fechaEnvio || '') <= baseline) continue;",
+                  "            var m = String(n.mensaje || '').match(/token:\\s*([0-9a-fA-F-]{36})/);",
+                  "            if (m) { token = m[1]; break; }",
+                  "        }",
+                  "        if (token) {",
+                  "            pm.collectionVariables.set('reset_token', token);",
+                  "            console.log('[recover] reset_token capturado:', token);",
+                  "        } else if (left > 0) {",
+                  "            setTimeout(function(){ poll(left - 1); }, 600);",
+                  "        } else {",
+                  "            console.log('[recover] timeout sin token nuevo');",
+                  "        }",
+                  "    });",
+                  "}",
+                  "poll(12);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"a.salazar@empresa.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{auth_url}}/auth/recover-password",
+              "host": ["{{auth_url}}"],
+              "path": ["auth", "recover-password"]
+            },
+            "description": "Solicita un token para restablecer contraseña. El pre-request snapshotea el fechaEnvio más reciente; el test hace polling y solo acepta notifs estrictamente más recientes para garantizar que el token capturado es el de esta ejecución."
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Password (Ejecutar)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Reset responde 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{reset_token}}\",\n  \"newPassword\": \"MicroNueva123!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{auth_url}}/auth/reset-password",
+              "host": ["{{auth_url}}"],
+              "path": ["auth", "reset-password"]
+            },
+            "description": "Restablece la contraseña de a.salazar@empresa.com a 'MicroNueva123!' usando el token dinámico capturado en el paso anterior. La pareja Recover/Reset Restaurar que sigue regresa la contraseña a su valor original."
+          },
+          "response": []
+        },
+        {
+          "name": "Recover Password (Restaurar)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Snapshot del fechaEnvio más reciente ANTES de disparar el recover de restauración.",
+                  "var notifUrl = pm.variables.replaceIn('{{notificaciones_url}}/notificaciones');",
+                  "var jwt = pm.collectionVariables.get('jwt_token');",
+                  "pm.sendRequest({ url: notifUrl, method: 'GET', header: { 'Authorization': 'Bearer ' + jwt } }, function (err, res) {",
+                  "    var baseline = '';",
+                  "    if (!err && res && res.code === 200) {",
+                  "        try {",
+                  "            var notifs = res.json();",
+                  "            for (var i = 0; i < notifs.length; i++) {",
+                  "                var n = notifs[i];",
+                  "                if (n.tipo === 'SEGURIDAD' && n.destinatario === 'a.salazar@empresa.com') {",
+                  "                    baseline = n.fechaEnvio || '';",
+                  "                    break;",
+                  "                }",
+                  "            }",
+                  "        } catch (e) {}",
+                  "    }",
+                  "    pm.collectionVariables.set('reset_baseline', baseline);",
+                  "    console.log('[recover-restaurar-pre] baseline:', baseline || '(vacío)');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Recover (restaurar) responde 200', function () { pm.response.to.have.status(200); });",
+                  "var baseline = pm.collectionVariables.get('reset_baseline') || '';",
+                  "var notifUrl = pm.variables.replaceIn('{{notificaciones_url}}/notificaciones');",
+                  "var jwt = pm.collectionVariables.get('jwt_token');",
+                  "function poll(left) {",
+                  "    pm.sendRequest({ url: notifUrl, method: 'GET', header: { 'Authorization': 'Bearer ' + jwt } }, function (err, res) {",
+                  "        if (err || !res || res.code !== 200) {",
+                  "            if (left > 0) { setTimeout(function(){ poll(left - 1); }, 600); }",
+                  "            return;",
+                  "        }",
+                  "        var notifs; try { notifs = res.json(); } catch(e) { notifs = []; }",
+                  "        var token = null;",
+                  "        for (var i = 0; i < notifs.length; i++) {",
+                  "            var n = notifs[i];",
+                  "            if (n.tipo !== 'SEGURIDAD' || n.destinatario !== 'a.salazar@empresa.com') continue;",
+                  "            if (baseline && (n.fechaEnvio || '') <= baseline) continue;",
+                  "            var m = String(n.mensaje || '').match(/token:\\s*([0-9a-fA-F-]{36})/);",
+                  "            if (m) { token = m[1]; break; }",
+                  "        }",
+                  "        if (token) {",
+                  "            pm.collectionVariables.set('reset_token', token);",
+                  "            console.log('[recover-restaurar] reset_token capturado:', token);",
+                  "        } else if (left > 0) {",
+                  "            setTimeout(function(){ poll(left - 1); }, 600);",
+                  "        } else {",
+                  "            console.log('[recover-restaurar] timeout sin token nuevo');",
+                  "        }",
+                  "    });",
+                  "}",
+                  "poll(12);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"a.salazar@empresa.com\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{auth_url}}/auth/recover-password",
+              "host": ["{{auth_url}}"],
+              "path": ["auth", "recover-password"]
+            },
+            "description": "Solicita un nuevo token de recuperación para restaurar la contraseña original. Captura el token nuevo en {{reset_token}}."
+          },
+          "response": []
+        },
+        {
+          "name": "Reset Password (Restaurar)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Reset (restaurar) responde 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{reset_token}}\",\n  \"newPassword\": \"Micro123456!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{auth_url}}/auth/reset-password",
+              "host": ["{{auth_url}}"],
+              "path": ["auth", "reset-password"]
+            },
+            "description": "Devuelve la contraseña de a.salazar@empresa.com a 'Micro123456!' para que la colección sea idempotente y se pueda re-ejecutar sin pre-condiciones."
+          },
+          "response": []
+        },
+        {
+          "name": "Login (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Login ADMIN responde 200', function () { pm.response.to.have.status(200); });",
+                  "var jsonData = pm.response.json();",
+                  "if (jsonData.accessToken) {",
+                  "    pm.collectionVariables.set('jwt_token', jsonData.accessToken);",
+                  "    pm.collectionVariables.set('jwt_admin_token', jsonData.accessToken);",
+                  "    console.log('Token JWT de ADMIN guardado en jwt_token y jwt_admin_token.');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"l.castellanos@empresa.com\",\n  \"password\": \"Micro123456!\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{auth_url}}/auth/login",
+              "host": ["{{auth_url}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Inicia sesión con credenciales de Administrador (l.castellanos@empresa.com). Se ejecuta al FINAL del folder para que el resto de la colección use el JWT con rol ADMIN/RRHH y los endpoints protegidos respondan 200."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Departamentos",
+      "description": "Servicio de Departamentos en Python (FastAPI) que gestiona unidades organizacionales y valida permisos jerárquicos. Corre por defecto en el puerto 8081. Se ejecuta antes que Empleados para que DEP001 exista al crear EMP001.",
+      "item": [
+        {
+          "name": "Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Departamentos health 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{departamentos_url}}/health",
+              "host": ["{{departamentos_url}}"],
+              "path": ["health"]
+            },
+            "description": "Verifica el estado del servicio y su conexión con la base de datos Postgres."
+          },
+          "response": []
+        },
+        {
+          "name": "Listar Departamentos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Listar departamentos 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{departamentos_url}}/departamentos",
+              "host": ["{{departamentos_url}}"],
+              "path": ["departamentos"]
+            },
+            "description": "Obtiene la lista completa de departamentos. Requiere token JWT válido."
+          },
+          "response": []
+        },
+        {
+          "name": "Crear Departamento (DEP001/RRHH)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Crear departamento 201 o duplicado (400/409) si ya existía', function () { pm.expect([200, 201, 400, 409]).to.include(pm.response.code); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"DEP001\",\n  \"nombre\": \"Tecnología y Sistemas\",\n  \"descripcion\": \"Dirección y desarrollo de tecnologías de la información\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{departamentos_url}}/departamentos",
+              "host": ["{{departamentos_url}}"],
+              "path": ["departamentos"]
+            },
+            "description": "Crea el departamento DEP001 que será referenciado por el empleado EMP001 más adelante. Acepta 409 si ya existe (re-ejecución sin limpieza previa)."
+          },
+          "response": []
+        },
+        {
+          "name": "Obtener Departamento por ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Obtener departamento 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{departamentos_url}}/departamentos/DEP001",
+              "host": ["{{departamentos_url}}"],
+              "path": ["departamentos", "DEP001"]
+            },
+            "description": "Obtiene los detalles del departamento DEP001 recién creado."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Empleados",
+      "description": "Servicio de Empleados en Java (Spring Boot) que maneja el ciclo de vida del personal y publica eventos en RabbitMQ. Corre por defecto en el puerto 8080. Se ejecuta después de Departamentos para que DEP001 exista, y antes de Perfiles para que EMP001 esté disponible.",
+      "item": [
+        {
+          "name": "Health Check (Actuator)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Empleados health 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{empleados_url}}/actuator/health",
+              "host": ["{{empleados_url}}"],
+              "path": ["actuator", "health"]
+            },
+            "description": "Verifica el estado del servicio de empleados mediante Spring Boot Actuator."
+          },
+          "response": []
+        },
+        {
+          "name": "Listar Empleados",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Listar empleados 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{empleados_url}}/empleado",
+              "host": ["{{empleados_url}}"],
+              "path": ["empleado"]
+            },
+            "description": "Obtiene una lista con todos los empleados registrados."
+          },
+          "response": []
+        },
+        {
+          "name": "Registrar Empleado (Admin/RRHH)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Registrar empleado 201 o duplicado (400/409) si ya existía', function () { pm.expect([200, 201, 400, 409]).to.include(pm.response.code); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"numeroEmpleado\": \"EMP001\",\n  \"email\": \"juan.perez@empresa.com\",\n  \"nombre\": \"Juan\",\n  \"apellido\": \"Perez\",\n  \"cargo\": \"Desarrollador Senior\",\n  \"area\": \"TI\",\n  \"departamentoId\": \"DEP001\",\n  \"fechaIngreso\": \"2026-05-20\",\n  \"estado\": \"ACTIVO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{empleados_url}}/empleado",
+              "host": ["{{empleados_url}}"],
+              "path": ["empleado"]
+            },
+            "description": "Crea el empleado EMP001 referenciando DEP001 (creado en el folder anterior). Publica empleado.creado a RabbitMQ; los consumers (auth, perfiles, notificaciones) reaccionan."
+          },
+          "response": []
+        },
+        {
+          "name": "Obtener Empleado por Código ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Obtener empleado por id 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{empleados_url}}/empleado/EMP001",
+              "host": ["{{empleados_url}}"],
+              "path": ["empleado", "EMP001"]
+            },
+            "description": "Obtiene los detalles del empleado por su identificador único."
+          },
+          "response": []
+        },
+        {
+          "name": "Obtener Empleado por Email",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Obtener empleado por email 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{empleados_url}}/empleado/email/juan.perez@empresa.com",
+              "host": ["{{empleados_url}}"],
+              "path": ["empleado", "email", "juan.perez@empresa.com"]
+            },
+            "description": "Busca y obtiene un empleado usando su correo electrónico."
+          },
+          "response": []
+        },
+        {
+          "name": "Actualizar Empleado (PUT)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Actualizar empleado PUT 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"juan.perez@empresa.com\",\n  \"nombre\": \"Juan Carlos\",\n  \"apellido\": \"Perez\",\n  \"cargo\": \"Líder Técnico TI\",\n  \"area\": \"TI\",\n  \"departamentoId\": \"DEP001\",\n  \"fechaIngreso\": \"2026-05-20\",\n  \"estado\": \"ACTIVO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{empleados_url}}/empleado/EMP001",
+              "host": ["{{empleados_url}}"],
+              "path": ["empleado", "EMP001"]
+            },
+            "description": "Actualiza por completo la información de un empleado existente por su número de empleado (ID)."
+          },
+          "response": []
+        },
+        {
+          "name": "Actualizar Empleado (PATCH)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Actualizar empleado PATCH 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"juan.perez@empresa.com\",\n  \"nombre\": \"Juan Carlos\",\n  \"apellido\": \"Perez\",\n  \"cargo\": \"Líder Técnico TI\",\n  \"area\": \"TI\",\n  \"departamentoId\": \"DEP001\",\n  \"fechaIngreso\": \"2026-05-20\",\n  \"estado\": \"ACTIVO\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{empleados_url}}/empleado/EMP001",
+              "host": ["{{empleados_url}}"],
+              "path": ["empleado", "EMP001"]
+            },
+            "description": "Actualiza parcialmente la información de un empleado. Funciona como un alias de PUT."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Perfiles",
+      "description": "Servicio de Perfiles en PHP (Laravel) que gestiona información complementaria, CVs, biografías y redes sociales. Consume eventos de RabbitMQ y expone su API en el puerto 8083. Se ejecuta después de Empleados para que EMP001 esté disponible.",
+      "item": [
+        {
+          "name": "Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Perfiles health 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{perfiles_url}}/api/health",
+              "host": ["{{perfiles_url}}"],
+              "path": ["api", "health"]
+            },
+            "description": "Valida el estado del contenedor de Laravel, la base de datos y RabbitMQ."
+          },
+          "response": []
+        },
+        {
+          "name": "Métricas Prometheus",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Métricas 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{perfiles_url}}/api/metrics",
+              "host": ["{{perfiles_url}}"],
+              "path": ["api", "metrics"]
+            },
+            "description": "Muestra métricas del servicio de perfiles formateadas para Prometheus."
+          },
+          "response": []
+        },
+        {
+          "name": "Listar Perfiles (Solo RRHH)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Listar perfiles 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{perfiles_url}}/api/perfiles?per_page=15",
+              "host": ["{{perfiles_url}}"],
+              "path": ["api", "perfiles"],
+              "query": [
+                { "key": "per_page", "value": "15" }
+              ]
+            },
+            "description": "Retorna todos los perfiles de manera paginada. Requiere privilegios de Recursos Humanos."
+          },
+          "response": []
+        },
+        {
+          "name": "Crear Perfil (Solo RRHH)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Crear perfil 201 o 200/409 si ya existía', function () { pm.expect([200, 201, 409, 422]).to.include(pm.response.code); });",
+                  "// Siempre refrescamos perfil_id desde GET /api/perfiles/EMP001 — esto evita usar un UUID stale de un run anterior cuando el POST devuelve 422 (porque el consumer empleado.creado ya creó el perfil) o cuando body.id no viene en el shape esperado.",
+                  "pm.collectionVariables.unset('perfil_id');",
+                  "var url = pm.variables.replaceIn('{{perfiles_url}}/api/perfiles/EMP001');",
+                  "var jwt = pm.collectionVariables.get('jwt_token');",
+                  "function fetchPerfilId(left) {",
+                  "    pm.sendRequest({ url: url, method: 'GET', header: { 'Authorization': 'Bearer ' + jwt } }, function (err, res) {",
+                  "        if (!err && res && res.code === 200) {",
+                  "            try {",
+                  "                var b = res.json();",
+                  "                var id = (b && b.id) || (b && b.data && b.data.id);",
+                  "                if (id) {",
+                  "                    pm.collectionVariables.set('perfil_id', id);",
+                  "                    console.log('[perfil] perfil_id capturado:', id);",
+                  "                    return;",
+                  "                }",
+                  "            } catch (e) {}",
+                  "        }",
+                  "        if (left > 0) { setTimeout(function(){ fetchPerfilId(left - 1); }, 500); }",
+                  "        else { console.log('[perfil] no se pudo capturar perfil_id (resp code:', res && res.code, ')'); }",
+                  "    });",
+                  "}",
+                  "fetchPerfilId(6);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"empleadoId\": \"EMP001\",\n  \"telefono\": \"+573001234567\",\n  \"direccion\": \"Calle Falsa 123\",\n  \"ciudad\": \"Medellín\",\n  \"biografia\": \"Desarrollador experimentado apasionado por el diseño de sistemas distribuidos y microservicios.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{perfiles_url}}/api/perfiles",
+              "host": ["{{perfiles_url}}"],
+              "path": ["api", "perfiles"]
+            },
+            "description": "Crea un perfil para EMP001. El test script captura el UUID interno y lo guarda en {{perfil_id}} para los endpoints by-uuid."
+          },
+          "response": []
+        },
+        {
+          "name": "Obtener Perfil por Empleado ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Obtener perfil por empleado 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{perfiles_url}}/api/perfiles/EMP001",
+              "host": ["{{perfiles_url}}"],
+              "path": ["api", "perfiles", "EMP001"]
+            },
+            "description": "Retorna el perfil del empleado especificado."
+          },
+          "response": []
+        },
+        {
+          "name": "Obtener Perfil por UUID Interno",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Refresca perfil_id desde /api/perfiles/EMP001 para que el request use SIEMPRE el UUID vigente, incluso si el usuario corrió Crear Perfil hace tiempo o el perfil fue auto-creado vía empleado.creado.",
+                  "var url = pm.variables.replaceIn('{{perfiles_url}}/api/perfiles/EMP001');",
+                  "var jwt = pm.collectionVariables.get('jwt_token');",
+                  "pm.sendRequest({ url: url, method: 'GET', header: { 'Authorization': 'Bearer ' + jwt } }, function (err, res) {",
+                  "    if (!err && res && res.code === 200) {",
+                  "        try { var b = res.json(); var id = (b && b.id) || (b && b.data && b.data.id); if (id) { pm.collectionVariables.set('perfil_id', id); console.log('[pre-obtener-uuid] perfil_id:', id); } } catch (e) {}",
+                  "    } else { console.log('[pre-obtener-uuid] no se pudo refrescar perfil_id (code:', res && res.code, ')'); }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Obtener perfil por UUID 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{perfiles_url}}/api/perfiles/id/{{perfil_id}}",
+              "host": ["{{perfiles_url}}"],
+              "path": ["api", "perfiles", "id", "{{perfil_id}}"]
+            },
+            "description": "Obtiene los detalles del perfil por su identificador UUID interno de Laravel. El pre-request refresca {{perfil_id}} desde /api/perfiles/EMP001 para tolerar runs sueltos o IDs cacheados."
+          },
+          "response": []
+        },
+        {
+          "name": "Actualizar Perfil (PUT)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Actualizar perfil PUT 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"telefono\": \"+573119876543\",\n  \"direccion\": \"Nueva Avenida Diagonal 45\",\n  \"ciudad\": \"Envigado\",\n  \"biografia\": \"Biografía actualizada. Experto en tecnologías cloud e infraestructura.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{perfiles_url}}/api/perfiles/EMP001",
+              "host": ["{{perfiles_url}}"],
+              "path": ["api", "perfiles", "EMP001"]
+            },
+            "description": "Actualiza por completo la información del perfil de un empleado."
+          },
+          "response": []
+        },
+        {
+          "name": "Actualizar Perfil (PATCH)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Actualizar perfil PATCH 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"telefono\": \"+573119876543\",\n  \"direccion\": \"Nueva Avenida Diagonal 45\",\n  \"ciudad\": \"Envigado\",\n  \"biografia\": \"Biografía actualizada con PATCH.\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{perfiles_url}}/api/perfiles/EMP001",
+              "host": ["{{perfiles_url}}"],
+              "path": ["api", "perfiles", "EMP001"]
+            },
+            "description": "Actualiza parcialmente la información del perfil del empleado."
+          },
+          "response": []
+        },
+        {
+          "name": "Eliminar Perfil por UUID Interno (Solo RRHH)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Refresca perfil_id desde /api/perfiles/EMP001 (mismo motivo que Obtener-por-UUID).",
+                  "var url = pm.variables.replaceIn('{{perfiles_url}}/api/perfiles/EMP001');",
+                  "var jwt = pm.collectionVariables.get('jwt_token');",
+                  "pm.sendRequest({ url: url, method: 'GET', header: { 'Authorization': 'Bearer ' + jwt } }, function (err, res) {",
+                  "    if (!err && res && res.code === 200) {",
+                  "        try { var b = res.json(); var id = (b && b.id) || (b && b.data && b.data.id); if (id) { pm.collectionVariables.set('perfil_id', id); console.log('[pre-eliminar-uuid] perfil_id:', id); } } catch (e) {}",
+                  "    } else { console.log('[pre-eliminar-uuid] no se pudo refrescar perfil_id (code:', res && res.code, ')'); }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Eliminar perfil por UUID 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{perfiles_url}}/api/perfiles/id/{{perfil_id}}",
+              "host": ["{{perfiles_url}}"],
+              "path": ["api", "perfiles", "id", "{{perfil_id}}"]
+            },
+            "description": "Soft-delete del perfil usando su UUID interno. El pre-request refresca {{perfil_id}} desde /api/perfiles/EMP001 para tolerar runs sueltos o IDs cacheados."
+          },
+          "response": []
+        },
+        {
+          "name": "Eliminar Perfil por Empleado ID (Solo RRHH)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Eliminar perfil por empleado (200 o 404 si ya estaba soft-deleted)', function () { pm.expect([200, 404]).to.include(pm.response.code); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{perfiles_url}}/api/perfiles/EMP001",
+              "host": ["{{perfiles_url}}"],
+              "path": ["api", "perfiles", "EMP001"]
+            },
+            "description": "Soft-delete del perfil por empleadoId. Devuelve 404 si el perfil ya fue eliminado por UUID en el paso anterior — aceptado por el test."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Notificaciones",
+      "description": "Servicio de Notificaciones en Python (FastAPI) que registra el log de eventos procesados en RabbitMQ. Corre por defecto en el puerto 8082.",
+      "item": [
+        {
+          "name": "Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Notificaciones health 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{notificaciones_url}}/health",
+              "host": ["{{notificaciones_url}}"],
+              "path": ["health"]
+            },
+            "description": "Verifica el estado del servicio de notificaciones, su base de datos Postgres y su conectividad a RabbitMQ."
+          },
+          "response": []
+        },
+        {
+          "name": "Listar Todas las Notificaciones",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Listar notificaciones 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{notificaciones_url}}/notificaciones",
+              "host": ["{{notificaciones_url}}"],
+              "path": ["notificaciones"]
+            },
+            "description": "Retorna el historial completo de eventos y notificaciones procesadas."
+          },
+          "response": []
+        },
+        {
+          "name": "Listar Notificaciones por Empleado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Listar notificaciones por empleado 200', function () { pm.response.to.have.status(200); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{notificaciones_url}}/notificaciones/EMP001",
+              "host": ["{{notificaciones_url}}"],
+              "path": ["notificaciones", "EMP001"]
+            },
+            "description": "Filtra y retorna las notificaciones del empleado EMP001."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. Limpieza",
+      "description": "Eliminaciones diferidas al final: garantiza idempotencia entre ejecuciones de la colección.",
+      "item": [
+        {
+          "name": "Eliminar Empleado (Admin/RRHH)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Eliminar empleado 200 o 404 si ya no existía', function () { pm.expect([200, 204, 404]).to.include(pm.response.code); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{empleados_url}}/empleado/EMP001",
+              "host": ["{{empleados_url}}"],
+              "path": ["empleado", "EMP001"]
+            },
+            "description": "Elimina EMP001. Dispara empleado.eliminado en RabbitMQ; auth y perfiles reaccionan."
+          },
+          "response": []
+        },
+        {
+          "name": "Eliminar Departamento (DEP001/RRHH)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Eliminar departamento 200/204 o 404', function () { pm.expect([200, 204, 404]).to.include(pm.response.code); });"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{departamentos_url}}/departamentos/DEP001",
+              "host": ["{{departamentos_url}}"],
+              "path": ["departamentos", "DEP001"]
+            },
+            "description": "Elimina DEP001 al final del flujo (después de borrar EMP001)."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "event": [],
+  "variable": [
+    {
+      "key": "auth_url",
+      "value": "http://localhost:8084",
+      "type": "string"
+    },
+    {
+      "key": "empleados_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "departamentos_url",
+      "value": "http://localhost:8081",
+      "type": "string"
+    },
+    {
+      "key": "perfiles_url",
+      "value": "http://localhost:8083",
+      "type": "string"
+    },
+    {
+      "key": "notificaciones_url",
+      "value": "http://localhost:8082",
+      "type": "string"
+    },
+    {
+      "key": "jwt_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "jwt_user_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "jwt_admin_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "reset_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "reset_baseline",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "perfil_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt_token}}",
+        "type": "string"
+      }
+    ]
+  }
+}

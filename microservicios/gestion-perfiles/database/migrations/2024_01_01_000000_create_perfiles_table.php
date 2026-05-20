@@ -9,19 +9,18 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('perfiles', function (Blueprint $table) {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->string('empleado_id')->unique()->comment('ID del empleado en el servicio gestion-empleados');
             $table->string('nombre');
             $table->string('email')->unique();
-            $table->string('foto_url')->nullable();
-            $table->text('bio')->nullable();
-            $table->string('departamento_id')->nullable()->comment('ID del departamento asociado');
-            $table->boolean('activo')->default(true);
-            $table->timestamps();
+            $table->string('telefono')->nullable();
+            $table->string('direccion')->nullable();
+            $table->string('ciudad')->nullable();
+            $table->text('biografia')->nullable();
+            $table->timestamp('fecha_creacion')->nullable();
             $table->softDeletes();
 
             $table->index('empleado_id');
-            $table->index('departamento_id');
         });
     }
 
