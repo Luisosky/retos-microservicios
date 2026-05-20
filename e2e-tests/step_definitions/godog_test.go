@@ -472,20 +472,28 @@ func (a *apiTestState) elEmpleadoDesvinculadoIntentaSolicitarUnaRecuperacinDeCon
 	payload := map[string]string{"email": offboardEmail}
 	jsonData, _ := json.Marshal(payload)
 
-	req, _ := http.NewRequest("POST", AuthURL+"/auth/recover-password", bytes.NewBuffer(jsonData))
-	req.Header.Add("Content-Type", "application/json")
-
-	// Creamos un cliente que solo espere 3 segundos en lugar de 60
 	clienteRapido := &http.Client{Timeout: 3 * time.Second}
 
-	resp, err := clienteRapido.Do(req)
-	if err != nil {
-		return err // Si falla rápido, al menos no te congela la terminal
-	}
-	defer resp.Body.Close()
+	// El evento empleado.eliminado se propaga de forma asincrónica a auth-service vía
+	// RabbitMQ. Damos hasta ~6s para que el consumer marque IsActive=false antes de
+	// asumir que la recuperación se permite indebidamente.
+	deadline := time.Now().Add(6 * time.Second)
+	for {
+		req, _ := http.NewRequest("POST", AuthURL+"/auth/recover-password", bytes.NewBuffer(jsonData))
+		req.Header.Add("Content-Type", "application/json")
 
-	a.responseCode = resp.StatusCode
-	return nil
+		resp, err := clienteRapido.Do(req)
+		if err != nil {
+			return err
+		}
+		a.responseCode = resp.StatusCode
+		resp.Body.Close()
+
+		if a.responseCode != http.StatusOK || time.Now().After(deadline) {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }
 
 func (a *apiTestState) laAPIDeAutenticacinDebeBloquearLaSolicitud() error {
