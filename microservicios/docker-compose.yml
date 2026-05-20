@@ -392,8 +392,9 @@ services:
       - "9090:8080"        # Interfaz web de Jenkins
       - "50000:50000"      # Puerto para agentes Jenkins
     volumes:
-      # Persistencia de datos de Jenkins
-      - ./jenkins_data:/var/jenkins_home
+      # Persistencia de datos de Jenkins (volumen nombrado: arranque <1 min en Windows
+      # vs bind mount, que tarda 5-15 min por la latencia de WSL2 -> NTFS al inspeccionar plugins)
+      - jenkins_home:/var/jenkins_home
       # Archivo JCasC montado explicitamente para evitar perdida por bind mount de jenkins_home
       - ./Jenkins/casc.yaml:/var/jenkins_home/casc.yaml:ro
       # Acceso al socket de Docker del host
@@ -411,10 +412,10 @@ services:
         condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/login"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 60s
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 300s
     restart: unless-stopped
 
   # Registry local opcional para almacenar imagenes de build
@@ -503,6 +504,8 @@ volumes:
   sonarqube_db_data:
     driver: local
   registry_data:
+    driver: local
+  jenkins_home:
     driver: local
   # Observability Volumes
   prometheus_data:

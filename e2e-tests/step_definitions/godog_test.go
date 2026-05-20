@@ -108,7 +108,7 @@ func (a *apiTestState) queElSistemaEstDesplegadoYOperativo() error {
 	// Inicializamos un cliente HTTP con un timeout para que no se quede colgado
 	a.client = &http.Client{Timeout: 60 * time.Second}
 
-	resp, err := a.client.Get("http://localhost:8084/health")
+	resp, err := a.client.Get(AuthURL+"/health")
 	if err != nil {
 		return fmt.Errorf("el servicio de autenticación no está respondiendo: %v", err)
 	}
@@ -119,7 +119,7 @@ func (a *apiTestState) queElSistemaEstDesplegadoYOperativo() error {
 func (a *apiTestState) queElServicioDeEmpleadosEstDisponible() error {
 	// Podemos hacer una petición rápida para verificar que el puerto 8080 responde
 	// (Aunque responda 401, significa que el servicio está vivo)
-	resp, err := a.client.Get("http://localhost:8080/empleado")
+	resp, err := a.client.Get(EmpleadosURL+"/empleado")
 	if err != nil {
 		return fmt.Errorf("el servicio de empleados no está respondiendo: %v", err)
 	}
@@ -128,7 +128,7 @@ func (a *apiTestState) queElServicioDeEmpleadosEstDisponible() error {
 }
 
 func (a *apiTestState) consultoLaListaDeEmpleadosSinTokenDeAutenticacin() error {
-	req, _ := http.NewRequest("GET", "http://localhost:8080/empleado", nil)
+	req, _ := http.NewRequest("GET", EmpleadosURL+"/empleado", nil)
 
 	resp, err := a.client.Do(req)
 	if err != nil {
@@ -163,7 +163,7 @@ func (a *apiTestState) queEstoyAutenticadoConElRol(rol string) error {
 
 	jsonData, _ := json.Marshal(credentials)
 
-	resp, err := a.client.Post("http://localhost:8084/auth/login", "application/json", bytes.NewBuffer(jsonData))
+	resp, err := a.client.Post(AuthURL+"/auth/login", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("error al hacer login: %v", err)
 	}
@@ -194,7 +194,7 @@ func (a *apiTestState) queEstoyAutenticadoConElRol(rol string) error {
 }
 
 func (a *apiTestState) consultoLaListaDeEmpleadosEnviandoElToken(tokenFalso string) error {
-	req, _ := http.NewRequest("GET", "http://localhost:8080/empleado", nil)
+	req, _ := http.NewRequest("GET", EmpleadosURL+"/empleado", nil)
 	req.Header.Add("Authorization", "Bearer "+tokenFalso)
 
 	resp, err := a.client.Do(req)
@@ -208,7 +208,7 @@ func (a *apiTestState) consultoLaListaDeEmpleadosEnviandoElToken(tokenFalso stri
 }
 
 func (a *apiTestState) consultoLaListaDeEmpleados() error {
-	req, _ := http.NewRequest("GET", "http://localhost:8080/empleado", nil)
+	req, _ := http.NewRequest("GET", EmpleadosURL+"/empleado", nil)
 	req.Header.Add("Authorization", "Bearer "+a.token)
 
 	resp, err := a.client.Do(req)
@@ -239,7 +239,7 @@ func (a *apiTestState) cuandoIntentoCrearUnNuevoEmpleadoEnElSistema() error {
 
 	jsonData, _ := json.Marshal(nuevoEmpleado)
 
-	req, _ := http.NewRequest("POST", "http://localhost:8080/empleado", bytes.NewBuffer(jsonData))
+	req, _ := http.NewRequest("POST", EmpleadosURL+"/empleado", bytes.NewBuffer(jsonData))
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Bearer "+a.token)
 
@@ -285,7 +285,7 @@ func (a *apiTestState) registroUnNuevoEmpleadoConDatosVlidos() error {
 	}
 	jsonData, _ := json.Marshal(nuevoEmpleado)
 
-	req, _ := http.NewRequest("POST", "http://localhost:8080/empleado", bytes.NewBuffer(jsonData))
+	req, _ := http.NewRequest("POST", EmpleadosURL+"/empleado", bytes.NewBuffer(jsonData))
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Bearer "+a.token) // Usamos el token del ADMIN
 
@@ -374,7 +374,7 @@ func (a *apiTestState) intentoRegistrarUnEmpleadoSinElCampoDeCorreoElectrnico() 
 	}
 	jsonData, _ := json.Marshal(empleadoInvalido)
 
-	req, _ := http.NewRequest("POST", "http://localhost:8080/empleado", bytes.NewBuffer(jsonData))
+	req, _ := http.NewRequest("POST", EmpleadosURL+"/empleado", bytes.NewBuffer(jsonData))
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Bearer "+a.token)
 
@@ -413,7 +413,7 @@ func (a *apiTestState) quePreparoUnEmpleadoTemporalParaSuPosteriorDesvinculacin(
 	}
 	jsonData, _ := json.Marshal(empleadoTemp)
 
-	req, _ := http.NewRequest("POST", "http://localhost:8080/empleado", bytes.NewBuffer(jsonData))
+	req, _ := http.NewRequest("POST", EmpleadosURL+"/empleado", bytes.NewBuffer(jsonData))
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", "Bearer "+a.token) // Reutilizamos el token de ADMIN
 
@@ -434,7 +434,7 @@ func (a *apiTestState) quePreparoUnEmpleadoTemporalParaSuPosteriorDesvinculacin(
 
 func (a *apiTestState) ejecutoLaDesvinculacinDeEsteEmpleadoEnElSistema() error {
 	// Hacemos un DELETE al endpoint de empleados
-	url := "http://localhost:8080/empleado/" + offboardID
+	url := EmpleadosURL+"/empleado/" + offboardID
 	req, _ := http.NewRequest("DELETE", url, nil)
 	req.Header.Add("Authorization", "Bearer "+a.token)
 
@@ -455,7 +455,7 @@ func (a *apiTestState) elSistemaDebeRechazarSusIntentosDeInicioDeSesin() error {
 	}
 	jsonData, _ := json.Marshal(credentials)
 
-	resp, err := a.client.Post("http://localhost:8084/auth/login", "application/json", bytes.NewBuffer(jsonData))
+	resp, err := a.client.Post(AuthURL+"/auth/login", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
@@ -472,7 +472,7 @@ func (a *apiTestState) elEmpleadoDesvinculadoIntentaSolicitarUnaRecuperacinDeCon
 	payload := map[string]string{"email": offboardEmail}
 	jsonData, _ := json.Marshal(payload)
 
-	req, _ := http.NewRequest("POST", "http://localhost:8084/auth/recover-password", bytes.NewBuffer(jsonData))
+	req, _ := http.NewRequest("POST", AuthURL+"/auth/recover-password", bytes.NewBuffer(jsonData))
 	req.Header.Add("Content-Type", "application/json")
 
 	// Creamos un cliente que solo espere 3 segundos en lugar de 60

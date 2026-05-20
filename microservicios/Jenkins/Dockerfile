@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
   wget \
   maven \
   golang-go \
+  gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Marcar el workspace montado como seguro para Git 2.35+
@@ -48,6 +49,12 @@ RUN jenkins-plugin-cli --plugins \
     role-strategy
 
 COPY casc.yaml /var/jenkins_home/casc.yaml
+
+# Entrypoint custom (root) que arregla la GID del socket de Docker antes de delegar al jenkins.sh oficial
+USER root
+COPY docker-socket-entrypoint.sh /usr/local/bin/docker-socket-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-socket-entrypoint.sh
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/docker-socket-entrypoint.sh"]
 
 # Establecer variables de entorno para JCasC
 ENV CASC_JENKINS_CONFIG=/var/jenkins_home/casc.yaml
