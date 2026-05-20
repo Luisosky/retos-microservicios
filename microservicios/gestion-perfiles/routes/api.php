@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\MetricsController;
 use App\Http\Controllers\PerfilController;
 use Illuminate\Support\Facades\Route;
 
@@ -9,8 +10,10 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 */
 
-// Health check
+// Health check (sin auth — usado por Docker y Prometheus)
 Route::get('/health', [PerfilController::class, 'health']);
+// Endpoint Prometheus en formato text/plain — scrape directo desde prometheus-server
+Route::get('/metrics', [MetricsController::class, 'index']);
 
 // Rutas de perfiles
 Route::prefix('perfiles')->middleware('jwt.auth')->group(function () {

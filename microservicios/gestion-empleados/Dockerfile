@@ -9,9 +9,13 @@ FROM eclipse-temurin:17-jre-jammy
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 
+# OpenTelemetry Java agent (Reto 7) — autoinstrumenta Spring MVC, RestTemplate,
+# Mongo, RabbitMQ y exporta a Zipkin sin tocar el código de la app.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL -o /app/opentelemetry-javaagent.jar \
+       https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.10.0/opentelemetry-javaagent.jar
 
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["sh","-c","java -javaagent:/app/opentelemetry-javaagent.jar -jar app.jar"]

@@ -14,6 +14,8 @@ class Kernel extends HttpKernel
         \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
         \Illuminate\Foundation\Http\Middleware\TrimStrings::class,
         \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
+        // Reto 7: instrumentación Prometheus en todas las requests
+        \App\Http\Middleware\PrometheusMetricsMiddleware::class,
     ];
 
     /**

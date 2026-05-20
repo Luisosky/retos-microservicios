@@ -3,12 +3,42 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using NpgsqlTypes;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using Prometheus;
+using Serilog;
+using Serilog.Formatting.Compact;
 using ServicioAutenticacion.Data;
 using ServicioAutenticacion.Messaging;
 using ServicioAutenticacion.Services;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// =====================================================================
+// Observabilidad (Reto 7): logs JSON, métricas Prometheus y trazas OTel
+// =====================================================================
+var serviceName = Environment.GetEnvironmentVariable("OTEL_SERVICE_NAME") ?? "autenticacion-service";
+
+builder.Host.UseSerilog((ctx, lc) => lc
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("service", serviceName)
+    .WriteTo.Console(new CompactJsonFormatter()));
+
+var zipkinEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_ZIPKIN_ENDPOINT")
+    ?? "http://zipkin:9411/api/v2/spans";
+
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(r => r.AddService(serviceName))
+    .WithTracing(t => t
+        .AddAspNetCoreInstrumentation(opts =>
+        {
+            opts.Filter = ctx =>
+                !(ctx.Request.Path.StartsWithSegments("/metrics")
+                    || ctx.Request.Path.StartsWithSegments("/health"));
+        })
+        .AddHttpClientInstrumentation()
+        .AddZipkinExporter(z => z.Endpoint = new Uri(zipkinEndpoint)));
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -102,17 +132,49 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseSerilogRequestLogging();
+
+// Instrumentación de métricas HTTP: tasa, latencia y status code por petición.
+app.UseHttpMetrics();
+
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapMetrics();  // expone /metrics en formato Prometheus
 
-app.MapGet("/health", () => Results.Ok(new
+app.MapGet("/health", async (AuthDbContext db) =>
 {
-    status = "ok",
-    service = "autenticacion",
-    timestamp = DateTimeOffset.UtcNow
-}));
+    var checks = new Dictionary<string, string>();
+    try
+    {
+        await db.Database.ExecuteSqlRawAsync("SELECT 1");
+        checks["database"] = "UP";
+    }
+    catch
+    {
+        checks["database"] = "DOWN";
+    }
+
+    var rabbitHost = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "rabbitmq-broker";
+    var rabbitPort = int.TryParse(Environment.GetEnvironmentVariable("RABBITMQ_PORT"), out var p) ? p : 5672;
+    try
+    {
+        using var tcp = new System.Net.Sockets.TcpClient();
+        var task = tcp.ConnectAsync(rabbitHost, rabbitPort);
+        await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(1)));
+        checks["messageBroker"] = task.IsCompletedSuccessfully ? "UP" : "DOWN";
+    }
+    catch
+    {
+        checks["messageBroker"] = "DOWN";
+    }
+
+    var status = checks.Values.All(v => v == "UP") ? "UP" : "DOWN";
+    return Results.Json(
+        new { status, service = serviceName, checks },
+        statusCode: status == "UP" ? 200 : 503);
+});
 
 // Only ensure created in development to avoid startup failures
 if (app.Environment.IsDevelopment())

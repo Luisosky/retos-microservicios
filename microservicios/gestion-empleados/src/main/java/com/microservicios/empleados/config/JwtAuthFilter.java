@@ -31,7 +31,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 || path.startsWith("/v3/api-docs/")
                 || path.startsWith("/swagger-ui")
                 || path.equals("/swagger-ui.html")
-                || path.equals("/actuator/health");
+                // Endpoints de observabilidad sin auth para scraping interno y health-checks
+                || path.startsWith("/actuator/health")
+                || path.equals("/actuator/prometheus")
+                || path.equals("/actuator/info")
+                || path.equals("/health");
     }
 
     @Override

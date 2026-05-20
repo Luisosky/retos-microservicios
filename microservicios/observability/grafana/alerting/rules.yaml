@@ -1,0 +1,90 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: microservicios-salud
+    folder: Microservicios
+    interval: 30s
+    rules:
+      # 1) Servicio caído: el target deja de responder al scrape por >1m
+      - uid: ms-service-down
+        title: ServicioCaido
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: up{job=~"empleados-service|departamentos-service|notificaciones-service|autenticacion-service|perfiles-service"}
+              instant: true
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: B
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [1]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                  type: query
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 1m
+        annotations:
+          summary: 'Servicio {{ $labels.job }} no responde'
+          description: 'Prometheus no obtiene métricas de {{ $labels.job }} hace >1m. up==0.'
+        labels:
+          severity: critical
+
+      # 2) Alta latencia: promedio de latencia HTTP > 2s durante 2m
+      - uid: ms-high-latency
+        title: AltaLatencia
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: |
+                sum by (job) (rate(http_request_duration_seconds_sum[2m]))
+                /
+                sum by (job) (rate(http_request_duration_seconds_count[2m]) > 0)
+              instant: true
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              refId: B
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [2]
+                  operator:
+                    type: and
+                  query:
+                    params: [A]
+                  reducer:
+                    type: last
+                  type: query
+        noDataState: OK
+        execErrState: OK
+        for: 2m
+        annotations:
+          summary: 'Latencia alta en {{ $labels.job }}'
+          description: 'La latencia promedio de {{ $labels.job }} supera 2s en los últimos 2m.'
+        labels:
+          severity: warning

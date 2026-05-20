@@ -64,6 +64,14 @@ services:
       JWT_ISSUER: auth-service
       JWT_AUDIENCE: microservices-clients
       JWT_SECRET: ${JWT_SECRET:-SuperSecretKeyWithMoreThan32CharactersForJWTTokenSigning}
+      # Observabilidad (Reto 7): agente OTel autoinstrumentado exporta a Zipkin
+      OTEL_SERVICE_NAME: empleados-service
+      OTEL_TRACES_EXPORTER: zipkin
+      OTEL_EXPORTER_ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+      OTEL_METRICS_EXPORTER: none
+      OTEL_LOGS_EXPORTER: none
+      OTEL_PROPAGATORS: tracecontext,baggage
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=microservicios,deployment.environment=development
     depends_on:
       redis:
         condition: service_healthy
@@ -76,11 +84,11 @@ services:
     ports:
       - "8080:8080"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/v3/api-docs"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 40s
+      start_period: 60s
     restart: unless-stopped
 
   # Servicio en Python (FastAPI)
@@ -96,12 +104,16 @@ services:
       JWT_SECRET: ${JWT_SECRET:-SuperSecretKeyWithMoreThan32CharactersForJWTTokenSigning}
       # RabbitMQ Configuration (si llega a consumir eventos)
       RABBITMQ_HOST: rabbitmq-broker
+      # Observabilidad (Reto 7)
+      OTEL_SERVICE_NAME: departamentos-service
+      OTEL_EXPORTER_ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+      OTEL_PROPAGATORS: tracecontext,baggage
     networks:
       - microservices-net
     ports:
       - "8081:8081"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/docs"]
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -122,6 +134,9 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-guest}
       NOTIF_EXCHANGE: empleados.events
       NOTIF_QUEUE: notificaciones.queue
+      OTEL_SERVICE_NAME: notificaciones-service
+      OTEL_EXPORTER_ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+      OTEL_PROPAGATORS: tracecontext,baggage
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -162,6 +177,9 @@ services:
       # Contraseña por defecto que el consumer del evento empleado.creado asigna al nuevo
       # usuario (modo dev/E2E). Sin esta variable se mantiene el flujo seguro de reset-token.
       EMPLEADO_DEFAULT_PASSWORD: ${EMPLEADO_DEFAULT_PASSWORD:-Micro123456!}
+      OTEL_SERVICE_NAME: autenticacion-service
+      OTEL_EXPORTER_ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+      OTEL_PROPAGATORS: tracecontext,baggage
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -206,6 +224,9 @@ services:
       SESSION_DRIVER: redis
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      OTEL_SERVICE_NAME: perfiles-service
+      OTEL_EXPORTER_ZIPKIN_ENDPOINT: http://zipkin:9411/api/v2/spans
+      OTEL_PROPAGATORS: tracecontext,baggage
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -256,6 +277,7 @@ services:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
     volumes:
       - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -289,10 +311,9 @@ services:
       GF_ALERTING_ENABLED: "false"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./observability/grafana-datasources.json:/etc/grafana/provisioning/datasources/datasources.json:ro
-      - ./observability/grafana-dashboards-provider.json:/etc/grafana/provisioning/dashboards/dashboards.json:ro
-      - ./observability/dashboards:/etc/grafana/provisioning/dashboards/custom:ro
-      - ./observability/grafana-notifiers.json:/etc/grafana/provisioning/notifiers/notifiers.json:ro
+      - ./observability/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana/alerting:/etc/grafana/provisioning/alerting:ro
     networks:
       - microservices-net
     ports:

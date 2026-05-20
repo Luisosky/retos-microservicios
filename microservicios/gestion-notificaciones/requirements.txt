@@ -10,6 +10,8 @@ PyJWT==2.10.1
 # ============================================
 # Observability Stack - Prometheus + OpenTelemetry
 # ============================================
+# setuptools<70 incluye pkg_resources que importa opentelemetry-instrumentation 0.42b0
+setuptools>=68.0,<70
 prometheus-client==0.19.0
 opentelemetry-api==1.21.0
 opentelemetry-sdk==1.21.0

@@ -8,6 +8,7 @@ from fastapi import HTTPException, Request, status
 def _is_public_path(path: str) -> bool:
     public_prefixes = (
         "/health",
+        "/metrics",
         "/docs",
         "/openapi.json",
         "/redoc",

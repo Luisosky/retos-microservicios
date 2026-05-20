@@ -239,14 +239,40 @@ class PerfilController extends Controller
 
     /**
      * GET /health
-     * Health check endpoint.
+     * Health check con el contrato del Reto 7: incluye chequeo real de DB y RabbitMQ.
+     * Devuelve 503 si algún componente está caído.
      */
     public function health(): JsonResponse
     {
+        $checks = [];
+
+        try {
+            \DB::connection()->getPdo();
+            \DB::connection()->select('SELECT 1');
+            $checks['database'] = 'UP';
+        } catch (\Throwable $e) {
+            $checks['database'] = 'DOWN';
+        }
+
+        $host = (string) env('RABBITMQ_HOST', 'rabbitmq-broker');
+        $port = (int) env('RABBITMQ_PORT', 5672);
+        $errno = 0; $errstr = '';
+        $sock = @fsockopen($host, $port, $errno, $errstr, 1.0);
+        if ($sock) {
+            $checks['messageBroker'] = 'UP';
+            fclose($sock);
+        } else {
+            $checks['messageBroker'] = 'DOWN';
+        }
+
+        $status = in_array('DOWN', $checks, true) ? 'DOWN' : 'UP';
+        $code = $status === 'UP' ? 200 : 503;
+
         return response()->json([
-            'status'  => 'ok',
-            'service' => 'gestion-perfiles',
-        ]);
+            'status'  => $status,
+            'service' => env('OTEL_SERVICE_NAME', 'perfiles-service'),
+            'checks'  => $checks,
+        ], $code);
     }
 
     private function serializarPerfil(Perfil $perfil): array

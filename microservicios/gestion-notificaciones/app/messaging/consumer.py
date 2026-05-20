@@ -13,6 +13,7 @@ class EmpleadoEventsConsumer:
     def __init__(self):
         self._thread = None
         self._stop_event = threading.Event()
+        self._connected = False
 
     def start(self):
         if self._thread and self._thread.is_alive():
@@ -23,6 +24,10 @@ class EmpleadoEventsConsumer:
 
     def stop(self):
         self._stop_event.set()
+        self._connected = False
+
+    def is_running(self) -> bool:
+        return bool(self._thread and self._thread.is_alive() and self._connected)
 
     def _run(self):
         while not self._stop_event.is_set():
@@ -115,11 +120,14 @@ class EmpleadoEventsConsumer:
                 channel.basic_qos(prefetch_count=10)
                 channel.basic_consume(queue=settings.queue_name, on_message_callback=callback)
 
+                self._connected = True
                 while not self._stop_event.is_set():
                     connection.process_data_events(time_limit=1)
+                self._connected = False
 
                 channel.close()
                 connection.close()
             except Exception as exc:
+                self._connected = False
                 print(f"[NOTIFICACION] Error conectando a RabbitMQ: {exc}")
                 time.sleep(5)

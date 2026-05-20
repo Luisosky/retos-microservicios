@@ -1,0 +1,20 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: discord-microservicios
+    receivers:
+      - uid: discord-microservicios
+        type: discord
+        settings:
+          url: ${DISCORD_WEBHOOK_URL}
+          title: '🚨 [{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+          message: |
+            {{ range .Alerts }}
+            **Servicio:** {{ .Labels.job }}
+            **Severidad:** {{ .Labels.severity }}
+            **Resumen:** {{ .Annotations.summary }}
+            **Detalle:** {{ .Annotations.description }}
+            **Inicio:** {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+            {{ end }}
+        disableResolveMessage: false
