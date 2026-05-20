@@ -17,11 +17,15 @@ public class AutorizacionEmpleadoService {
     private final EmpleadoRepository empleadoRepository;
 
     public void asegurarAccesoTotal() {
-        // Operaciones de escritura (crear/eliminar) y vistas globales requieren rol ADMIN.
-        // Se valida contra el rol del JWT inyectado por JwtAuthFilter, no contra el
-        // departamento del empleado: esto evita acoplar la autorización a la membresía
-        // de RRHH en Mongo y se alinea con el contrato role-based del servicio de auth.
+        // Permitir si el JWT trae rol ADMIN (contrato role-based del servicio de auth).
         if (esAdmin()) {
+            return;
+        }
+        // Compatibilidad hacia atrás: si el empleado autenticado existe en Mongo y pertenece
+        // a RRHH (DEP001), también se permite. Esto mantiene el modelo histórico para flujos
+        // internos donde el JWT no necesariamente trae ROLE_ADMIN.
+        Empleado autenticado = obtenerEmpleadoAutenticado();
+        if (esRecursosHumanos(autenticado)) {
             return;
         }
         throw new ForbiddenOperationException("No tienes permisos para esta operación.");
