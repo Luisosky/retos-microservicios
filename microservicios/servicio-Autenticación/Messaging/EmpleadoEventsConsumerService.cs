@@ -124,10 +124,19 @@ public class EmpleadoEventsConsumerService : BackgroundService
             var user = await db.Users.FirstOrDefaultAsync(x => x.Email == email, cancellationToken);
             if (user is null)
             {
+                // EMPLEADO_DEFAULT_PASSWORD permite que el evento empleado.creado
+                // deje al usuario con una contraseña usable directamente (modo dev/E2E).
+                // Si no está definido, mantenemos el flujo seguro original (hash vacío + reset token).
+                var defaultPassword = Environment.GetEnvironmentVariable("EMPLEADO_DEFAULT_PASSWORD")
+                    ?? _configuration["Auth:EmpleadoDefaultPassword"];
+                var initialHash = string.IsNullOrWhiteSpace(defaultPassword)
+                    ? string.Empty
+                    : BCrypt.Net.BCrypt.HashPassword(defaultPassword, 8);
+
                 user = new User
                 {
                     Email = email,
-                    PasswordHash = string.Empty,
+                    PasswordHash = initialHash,
                     Role = "USER",
                     IsActive = true,
                     CreatedAt = DateTimeOffset.UtcNow,

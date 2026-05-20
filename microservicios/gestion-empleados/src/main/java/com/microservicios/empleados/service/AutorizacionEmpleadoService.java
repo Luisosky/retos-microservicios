@@ -17,13 +17,29 @@ public class AutorizacionEmpleadoService {
     private final EmpleadoRepository empleadoRepository;
 
     public void asegurarAccesoTotal() {
-        Empleado autenticado = obtenerEmpleadoAutenticado();
-        if (!esRecursosHumanos(autenticado)) {
-            throw new ForbiddenOperationException("No tienes permisos para esta operación.");
+        // Operaciones de escritura (crear/eliminar) y vistas globales requieren rol ADMIN.
+        // Se valida contra el rol del JWT inyectado por JwtAuthFilter, no contra el
+        // departamento del empleado: esto evita acoplar la autorización a la membresía
+        // de RRHH en Mongo y se alinea con el contrato role-based del servicio de auth.
+        if (esAdmin()) {
+            return;
         }
+        throw new ForbiddenOperationException("No tienes permisos para esta operación.");
+    }
+
+    public boolean esAdmin() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            return false;
+        }
+        return authentication.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equalsIgnoreCase(a.getAuthority()));
     }
 
     public void asegurarAccesoPropioORecursosHumanosPorEmpleadoId(String empleadoId) {
+        if (esAdmin()) {
+            return;
+        }
         Empleado autenticado = obtenerEmpleadoAutenticado();
         if (esRecursosHumanos(autenticado)) {
             return;
@@ -36,6 +52,9 @@ public class AutorizacionEmpleadoService {
     }
 
     public void asegurarAccesoPropioORecursosHumanosPorEmail(String email) {
+        if (esAdmin()) {
+            return;
+        }
         Empleado autenticado = obtenerEmpleadoAutenticado();
         if (esRecursosHumanos(autenticado)) {
             return;

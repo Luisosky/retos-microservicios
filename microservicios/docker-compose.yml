@@ -159,6 +159,9 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_DEFAULT_PASS:-guest}
       AUTH_EXCHANGE: empleados.events
       AUTH_QUEUE: auth.queue
+      # Contraseña por defecto que el consumer del evento empleado.creado asigna al nuevo
+      # usuario (modo dev/E2E). Sin esta variable se mantiene el flujo seguro de reset-token.
+      EMPLEADO_DEFAULT_PASSWORD: ${EMPLEADO_DEFAULT_PASSWORD:-Micro123456!}
     depends_on:
       rabbitmq:
         condition: service_healthy

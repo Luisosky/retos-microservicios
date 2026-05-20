@@ -88,7 +88,7 @@ public class EmpleadoController {
             )
     })
     public ResponseEntity<List<Empleado>> listarEmpleados() {
-                autorizacionEmpleadoService.asegurarAccesoTotal();
+        // Cualquier usuario autenticado puede listar; las escrituras siguen siendo ADMIN.
         List<Empleado> empleados = empleadoService.obtenerTodosEmpleados();
         return ResponseEntity.status(HttpStatus.OK).body(empleados);
     }

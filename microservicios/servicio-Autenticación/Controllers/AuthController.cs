@@ -75,6 +75,13 @@ public class AuthController : ControllerBase
 
             var user = await EnsureRecoverUserAsync(email);
 
+            // Si el empleado fue dado de baja (evento empleado.eliminado lo marca IsActive=false),
+            // no se debe permitir generar tokens de recuperación nuevos.
+            if (!user.IsActive)
+            {
+                return Unauthorized(new { mensaje = "La cuenta está deshabilitada." });
+            }
+
             await _dbContext.PasswordResetTokens
                 .Where(x => x.UserId == user.Id && !x.IsUsed && x.ExpiresAt > DateTimeOffset.UtcNow)
                 .ExecuteUpdateAsync(setters => setters.SetProperty(t => t.IsUsed, true));
