@@ -39,7 +39,13 @@ var csBuilder = new NpgsqlConnectionStringBuilder(authDatabaseUrl)
     MinPoolSize = 0,
     KeepAlive = 30,
     ConnectionIdleLifetime = 30,
-    ConnectionPruningInterval = 10
+    ConnectionPruningInterval = 10,
+    // Supabase pgbouncer (transaction mode, port 6543) no soporta prepared statements
+    // ni el RESET ALL que Npgsql emite por defecto.
+    MaxAutoPrepare = 0,
+    ServerCompatibilityMode = ServerCompatibilityMode.NoTypeLoading,
+    NoResetOnClose = true,
+    Multiplexing = false
 };
 authDatabaseUrl = csBuilder.ConnectionString;
 
