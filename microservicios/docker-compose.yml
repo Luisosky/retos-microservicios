@@ -190,7 +190,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-SuperSecretKeyWithMoreThan32CharactersForJWTTokenSigning}
 
       DB_CONNECTION: pgsql
-      DATABASE_URL: ${PERFILES_DATABASE_URL:-${PERFILES_APP_KEY}}
+      DATABASE_URL: ${PERFILES_DATABASE_URL:-}
 
       RABBITMQ_HOST: rabbitmq-broker
       RABBITMQ_PORT: 5672
@@ -381,7 +381,8 @@ services:
       JAVA_OPTS: "-Djenkins.install.runSetupWizard=false -Dhudson.plugins.git.GitSCM.ALLOW_LOCAL_CHECKOUT=true -Xmx1g -Xms512m"
       # Credenciales y conexión SonarQube
       JWT_SECRET: ${JWT_SECRET:-SuperSecretKeyWithMoreThan32CharactersForJWTTokenSigning}
-      SONARQUBE_TOKEN: ${SONARQUBE_TOKEN:-default-sonarqube-token}
+      # Si SONARQUBE_TOKEN esta vacio, los stages de Sonar fallaran con 401 (intencional).
+      SONARQUBE_TOKEN: ${SONARQUBE_TOKEN:-}
       SONAR_HOST_URL: http://sonarqube:9000
       GIT_REPO_URL: ${GIT_REPO_URL:-file:///workspace/repo}
       GIT_BRANCH: ${GIT_BRANCH:-reto6}
@@ -458,6 +459,9 @@ services:
       SONAR_JDBC_USERNAME: sonar
       SONAR_JDBC_PASSWORD: sonar
       SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+      # Forzar autenticacion por token (rechaza analisis anonimos)
+      SONAR_FORCEAUTHENTICATION: "true"
+      SONAR_WEB_SESSIONTIMEOUTINMINUTES: "60"
     networks:
       - microservices-net
     ports:
