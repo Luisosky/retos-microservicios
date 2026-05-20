@@ -326,13 +326,9 @@ public class AuthController : ControllerBase
             throw new InvalidOperationException("No fue posible resolver el usuario para recuperacion");
         }
 
-        if (!user.IsActive)
-        {
-            user.IsActive = true;
-            user.UpdatedAt = DateTimeOffset.UtcNow;
-            await _dbContext.SaveChangesAsync();
-        }
-
+        // Importante: NO reactivar usuarios deshabilitados aquí. Si un empleado fue
+        // dado de baja (empleado.eliminado -> IsActive=false), el caller de
+        // RecoverPassword debe rechazar la solicitud para preservar el bloqueo.
         return user;
     }
 
